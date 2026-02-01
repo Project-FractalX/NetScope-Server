@@ -13,9 +13,11 @@ import java.util.List;
 public class NetScopeDynamicController {
 
     private final NetScopeScanner scanner;
+    private final NetScopeSecurityConfig securityConfig;
 
-    public NetScopeDynamicController(NetScopeScanner scanner) {
+    public NetScopeDynamicController(NetScopeScanner scanner, NetScopeSecurityConfig securityConfig) {
         this.scanner = scanner;
+        this.securityConfig = securityConfig;
     }
 
     @RequestMapping("/**")
@@ -27,6 +29,15 @@ public class NetScopeDynamicController {
             if (fullPath.equals(def.getPath())) {
                 Object bean = def.getBean();
                 Method method = def.getMethod();
+
+                if (def.isRestricted() && securityConfig.isEnabled()) {
+                    String keyHeader = request.getHeader("X-API-KEY");
+                    String requiredKey = def.getApiKey().isEmpty() ? securityConfig.getApiKey() : def.getApiKey();
+
+                    if (keyHeader == null || !keyHeader.equals(requiredKey)) {
+                        throw new RuntimeException("Unauthorized: missing or invalid API key for " + def.getMethodName());
+                    }
+                }
 
                 // simple: only support GET with query params for now
                 Object[] args = {}; // TODO: parse request params and inject

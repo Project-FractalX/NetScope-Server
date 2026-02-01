@@ -6,6 +6,9 @@ import java.lang.annotation.*;
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface NetworkRestricted {
-    String path() default "";
-    RequestMethod method() default RequestMethod.POST;
+    // HTTP method (optional)
+    RequestMethod method() default RequestMethod.GET;
+
+    // Optional API key per method
+    String key() default "";
 }

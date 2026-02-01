@@ -36,8 +36,10 @@ public class NetScopeAutoConfiguration {
 
     @Bean
     @Lazy
-    public NetScopeDynamicController netScopeDynamicController(NetScopeScanner scanner) {
-        return new NetScopeDynamicController(scanner);
+    public NetScopeDynamicController netScopeDynamicController(
+            NetScopeScanner scanner,
+            NetScopeSecurityConfig securityConfig) {
+        return new NetScopeDynamicController(scanner, securityConfig);
     }
 
     @Bean
