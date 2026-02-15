@@ -1,4 +1,4 @@
-# NetScope gRPC by FractalX
+# NetScope by FractalX
 
 **NetScope** is a **Java Spring Boot library** that automatically exposes Spring bean methods as network-accessible APIs via **both REST and gRPC**.
 
