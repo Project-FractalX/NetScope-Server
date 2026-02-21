@@ -1,33 +1,21 @@
 package com.netscope.annotation;
 
-import org.springframework.web.bind.annotation.RequestMethod;
 import java.lang.annotation.*;
 
 /**
- * Marks a method as publicly accessible over the network (both REST and gRPC).
- * No authentication required.
+ * Marks a method or field as publicly accessible — no authentication required.
+ *
+ * On a METHOD:
+ *   @NetworkPublic
+ *   public List<String> getPublicInfo() { ... }
+ *
+ * On a FIELD:
+ *   @NetworkPublic
+ *   private String appVersion = "2.0.1";   // returns "2.0.1" directly
  */
-@Target(ElementType.METHOD)
+@Target({ElementType.METHOD, ElementType.FIELD})
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface NetworkPublic {
-    /**
-     * Custom REST path. Default is /netscope/{BeanName}/{methodName}
-     */
-    String path() default "";
-    
-    /**
-     * HTTP method for REST endpoint
-     */
-    RequestMethod method() default RequestMethod.GET;
-    
-    /**
-     * Enable/disable REST endpoint (default: true)
-     */
-    boolean enableRest() default true;
-    
-    /**
-     * Enable/disable gRPC endpoint (default: true)
-     */
-    boolean enableGrpc() default true;
+    String description() default "";
 }

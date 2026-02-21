@@ -1,96 +1,49 @@
 syntax = "proto3";
 
+import "google/protobuf/struct.proto";
+
 option java_multiple_files = true;
 option java_package = "com.netscope.grpc.proto";
 option java_outer_classname = "NetScopeProto";
 
 package netscope;
 
-// Generic request message for method invocation
-message GenericRequest {
-  // Bean name (e.g., "CustomerService")
-  string bean_name = 1;
-  
-  // Method name (e.g., "getCustomers")
-  string method_name = 2;
-  
-  // JSON-serialized arguments
-  string arguments_json = 3;
-  
-  // Optional: API key for authentication
-  string api_key = 4;
-  
-  // Optional: Parameter type names for method matching
-  repeated string parameter_types = 5;
+message InvokeRequest {
+  string bean_name       = 1;
+  string method_name     = 2;
+  string arguments_json  = 3;
+  repeated string parameter_types = 4;
 }
 
-// Generic response message
-message GenericResponse {
-  // JSON-serialized result
-  string result_json = 1;
-  
-  // Success status
-  bool success = 2;
-  
-  // Error message if failed
-  string error_message = 3;
-  
-  // HTTP status code equivalent
-  int32 status_code = 4;
+message InvokeResponse {
+  // Native JSON value — objects, arrays, primitives all work
+  google.protobuf.Value result = 1;
 }
 
-// Method metadata for documentation
 message MethodInfo {
-  // Bean name
-  string bean_name = 1;
-  
-  // Method name
-  string method_name = 2;
-  
-  // Full path
-  string path = 3;
-  
-  // Whether authentication is required
-  bool restricted = 4;
-  
-  // Return type
-  string return_type = 5;
-  
-  // Parameter information
-  repeated ParameterInfo parameters = 6;
+  string bean_name                    = 1;
+  string method_name                  = 2;
+  bool   secured                      = 3;
+  string return_type                  = 4;
+  repeated ParameterInfo parameters   = 5;
+  repeated string required_scopes     = 6;
+  string description                  = 7;
 }
 
-// Parameter metadata
 message ParameterInfo {
-  // Parameter name
-  string name = 1;
-  
-  // Parameter type
-  string type = 2;
-  
-  // Position/index
-  int32 index = 3;
+  string name  = 1;
+  string type  = 2;
+  int32  index = 3;
 }
 
-// Request for documentation
-message DocsRequest {
-  // Empty - returns all exposed methods
-}
+message DocsRequest {}
 
-// Response containing all method documentation
 message DocsResponse {
-  // List of all exposed methods
   repeated MethodInfo methods = 1;
 }
 
-// Main NetScope service
 service NetScopeService {
-  // Invoke any exposed method dynamically
-  rpc InvokeMethod (GenericRequest) returns (GenericResponse);
-  
-  // Get documentation for all exposed methods
-  rpc GetDocs (DocsRequest) returns (DocsResponse);
-  
-  // Streaming variant for real-time invocation
-  rpc InvokeMethodStream (stream GenericRequest) returns (stream GenericResponse);
+  rpc InvokeMethod       (InvokeRequest)        returns (InvokeResponse);
+  rpc GetDocs            (DocsRequest)           returns (DocsResponse);
+  rpc InvokeMethodStream (stream InvokeRequest)  returns (stream InvokeResponse);
 }

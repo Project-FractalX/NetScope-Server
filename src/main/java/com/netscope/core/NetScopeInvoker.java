@@ -1,75 +1,106 @@
 package com.netscope.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.netscope.model.NetworkMethodDefinition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Parameter;
+import java.util.List;
 
-/**
- * Handles dynamic invocation of network-exposed methods.
- */
 public class NetScopeInvoker {
 
-    private final ObjectMapper objectMapper;
-
-    public NetScopeInvoker() {
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
-    }
+    private static final Logger logger = LoggerFactory.getLogger(NetScopeInvoker.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * Invoke a method with JSON arguments.
+     * Invokes a method or reads a field.
+     * Returns JSON string of the result, or a status object for void methods.
      */
-    public Object invoke(NetworkMethodDefinition definition, String argumentsJson) throws Exception {
-        Method method = definition.getMethod();
-        Object bean = definition.getBean();
-        
-        // Parse arguments
-        Object[] args = parseArguments(method, argumentsJson);
-        
-        // Invoke the method
-        return method.invoke(bean, args);
+    public String invoke(NetworkMethodDefinition def, String argumentsJson) throws Exception {
+
+        // ── FIELD: just read and return the value ─────────────────────────────
+        if (def.isField()) {
+            return readField(def);
+        }
+
+        // ── METHOD: invoke and return result ──────────────────────────────────
+        return invokeMethod(def, argumentsJson);
     }
 
-    /**
-     * Parse JSON arguments into method parameters.
-     */
-    private Object[] parseArguments(Method method, String argumentsJson) throws Exception {
-        Parameter[] parameters = method.getParameters();
-        
-        if (parameters.length == 0) {
-            return new Object[0];
+    private String readField(NetworkMethodDefinition def) throws Exception {
+        Field field = def.getField();
+        field.setAccessible(true);
+        Object value = field.get(def.getBean());
+
+        if (value == null) {
+            return "null";
         }
 
-        if (argumentsJson == null || argumentsJson.trim().isEmpty() || argumentsJson.equals("null")) {
-            return new Object[parameters.length];
+        // Primitives and strings — return as JSON primitive
+        if (value instanceof String || value instanceof Number || value instanceof Boolean) {
+            return objectMapper.writeValueAsString(value);
         }
 
-        // Parse JSON array
-        Object[] values = objectMapper.readValue(argumentsJson, Object[].class);
-        Object[] args = new Object[parameters.length];
-
-        for (int i = 0; i < parameters.length && i < values.length; i++) {
-            if (values[i] != null) {
-                // Convert to the correct parameter type
-                JavaType javaType = objectMapper.getTypeFactory().constructType(parameters[i].getType());
-                args[i] = objectMapper.convertValue(values[i], javaType);
-            }
-        }
-
-        return args;
+        // Complex objects — serialize as JSON object
+        return objectMapper.writeValueAsString(value);
     }
 
-    /**
-     * Serialize result to JSON.
-     */
-    public String serializeResult(Object result) throws Exception {
+    private String invokeMethod(NetworkMethodDefinition def, String argumentsJson) throws Exception {
+        Method method = def.getMethod();
+        method.setAccessible(true);
+
+        Object[] args = resolveArguments(method, argumentsJson);
+        Object result = method.invoke(def.getBean(), args);
+
+        // ── void method → return accepted status ─────────────────────────────
+        if (def.isVoidReturn()) {
+            return "{\"status\":\"accepted\"}";
+        }
+
+        // ── null result ───────────────────────────────────────────────────────
         if (result == null) {
             return "null";
         }
+
+        // ── primitives and strings — return as JSON primitive ─────────────────
+        if (result instanceof String || result instanceof Number || result instanceof Boolean) {
+            return objectMapper.writeValueAsString(result);
+        }
+
+        // ── complex object or list — serialize as JSON ────────────────────────
         return objectMapper.writeValueAsString(result);
+    }
+
+    private Object[] resolveArguments(Method method, String argumentsJson) throws Exception {
+        Class<?>[] paramTypes = method.getParameterTypes();
+
+        if (paramTypes.length == 0) {
+            return new Object[0];
+        }
+
+        if (argumentsJson == null || argumentsJson.isBlank() || argumentsJson.equals("[]")) {
+            if (paramTypes.length > 0) {
+                throw new IllegalArgumentException(
+                    "Method requires " + paramTypes.length + " argument(s) but none were provided");
+            }
+            return new Object[0];
+        }
+
+        List<Object> rawArgs = objectMapper.readValue(argumentsJson,
+                objectMapper.getTypeFactory().constructCollectionType(List.class, Object.class));
+
+        if (rawArgs.size() != paramTypes.length) {
+            throw new IllegalArgumentException(
+                "Expected " + paramTypes.length + " argument(s) but got " + rawArgs.size());
+        }
+
+        Object[] typedArgs = new Object[paramTypes.length];
+        for (int i = 0; i < paramTypes.length; i++) {
+            typedArgs[i] = objectMapper.convertValue(rawArgs.get(i), paramTypes[i]);
+        }
+
+        return typedArgs;
     }
 }

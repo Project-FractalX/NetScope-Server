@@ -1,38 +1,44 @@
 package com.netscope.annotation;
 
-import org.springframework.web.bind.annotation.RequestMethod;
 import java.lang.annotation.*;
 
 /**
- * Marks a method as restricted - requires API key authentication.
- * Works for both REST and gRPC endpoints.
+ * Marks a method or field as secured — requires authentication.
+ * The auth parameter is REQUIRED — you must explicitly choose which auth type.
+ *
+ * On a METHOD:
+ *   @NetworkSecured(auth = AuthType.OAUTH)
+ *   public Customer getCustomer(String id) { ... }
+ *
+ *   @NetworkSecured(auth = AuthType.API_KEY)
+ *   public void deleteCustomer(String id) { ... }  // returns {"status":"accepted"}
+ *
+ *   @NetworkSecured(auth = AuthType.BOTH)
+ *   public List<Customer> listCustomers() { ... }
+ *
+ * On a FIELD (returns the field value directly):
+ *   @NetworkSecured(auth = AuthType.OAUTH)
+ *   private String secretToken = "abc123";         // returns "abc123" directly
+ *
+ *   @NetworkSecured(auth = AuthType.API_KEY)
+ *   private int internalCounter = 42;              // returns 42 directly
  */
-@Target(ElementType.METHOD)
+@Target({ElementType.METHOD, ElementType.FIELD})
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface NetworkSecured {
-    /**
-     * HTTP method for REST endpoint
-     */
-    RequestMethod method() default RequestMethod.GET;
 
     /**
-     * Optional per-method API key. If not specified, uses global API key from configuration.
+     * REQUIRED — which authentication type is accepted.
+     *
+     *   AuthType.OAUTH   — only OAuth 2.0 JWT token accepted
+     *   AuthType.API_KEY — only API key accepted
+     *   AuthType.BOTH    — either OAuth or API key accepted
      */
-    String key() default "";
-    
+    AuthType auth();
+
     /**
-     * Custom REST path. Default is /netscope/{BeanName}/{methodName}
+     * Description for documentation.
      */
-    String path() default "";
-    
-    /**
-     * Enable/disable REST endpoint (default: true)
-     */
-    boolean enableRest() default true;
-    
-    /**
-     * Enable/disable gRPC endpoint (default: true)
-     */
-    boolean enableGrpc() default true;
+    String description() default "";
 }

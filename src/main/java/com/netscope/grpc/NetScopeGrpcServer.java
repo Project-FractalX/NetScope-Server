@@ -1,6 +1,6 @@
 package com.netscope.grpc;
 
-import com.netscope.core.NetScopeGrpcConfig;
+import com.netscope.config.NetScopeConfig;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.protobuf.services.ProtoReflectionService;
@@ -8,54 +8,71 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Manages the gRPC server lifecycle.
- */
-@Component
 public class NetScopeGrpcServer {
 
     private static final Logger logger = LoggerFactory.getLogger(NetScopeGrpcServer.class);
 
-    private final NetScopeGrpcConfig config;
-    private final NetScopeGrpcService grpcService;
+    private final NetScopeConfig config;
+    private final NetScopeGrpcServiceImpl grpcService;
     private Server server;
 
-    @Autowired
-    public NetScopeGrpcServer(NetScopeGrpcConfig config, NetScopeGrpcService grpcService) {
+    public NetScopeGrpcServer(NetScopeConfig config, NetScopeGrpcServiceImpl grpcService) {
         this.config = config;
         this.grpcService = grpcService;
     }
 
     @PostConstruct
     public void start() throws IOException {
-        if (!config.isEnabled()) {
+        NetScopeConfig.GrpcConfig grpcConfig = config.getGrpc();
+
+        if (!grpcConfig.isEnabled()) {
             logger.info("NetScope gRPC server is disabled");
             return;
         }
 
-        server = ServerBuilder.forPort(config.getPort())
-            .addService(grpcService)
-            .addService(ProtoReflectionService.newInstance()) // Enable gRPC reflection
-            .maxInboundMessageSize(config.getMaxInboundMessageSize())
-            .build()
-            .start();
+        // Register auth interceptor — reads credentials from metadata headers
+        NetScopeAuthInterceptor authInterceptor = new NetScopeAuthInterceptor();
 
-        logger.info("NetScope gRPC server started on port {}", config.getPort());
+        ServerBuilder<?> builder = ServerBuilder.forPort(grpcConfig.getPort())
+                .addService(grpcService)
+                .intercept(authInterceptor)           // ← auth interceptor
+                .maxInboundMessageSize(grpcConfig.getMaxInboundMessageSize());
 
-        // Add shutdown hook
+        if (grpcConfig.isEnableReflection()) {
+            builder.addService(ProtoReflectionService.newInstance());
+        }
+
+        if (grpcConfig.getKeepAliveTime() > 0)
+            builder.keepAliveTime(grpcConfig.getKeepAliveTime(), TimeUnit.SECONDS);
+        if (grpcConfig.getKeepAliveTimeout() > 0)
+            builder.keepAliveTimeout(grpcConfig.getKeepAliveTimeout(), TimeUnit.SECONDS);
+
+        builder.permitKeepAliveWithoutCalls(grpcConfig.isPermitKeepAliveWithoutCalls());
+
+        if (grpcConfig.getMaxConnectionIdle() > 0)
+            builder.maxConnectionIdle(grpcConfig.getMaxConnectionIdle(), TimeUnit.SECONDS);
+        if (grpcConfig.getMaxConnectionAge() > 0)
+            builder.maxConnectionAge(grpcConfig.getMaxConnectionAge(), TimeUnit.SECONDS);
+
+        server = builder.build().start();
+
+        logger.info("╔════════════════════════════════════════════════════════════╗");
+        logger.info("║           NetScope gRPC Server Started                     ║");
+        logger.info("╠════════════════════════════════════════════════════════════╣");
+        logger.info("║  Port         : {}                                      ║", grpcConfig.getPort());
+        logger.info("║  Reflection   : {}                                  ║", grpcConfig.isEnableReflection() ? "Enabled " : "Disabled");
+        logger.info("║  OAuth 2.0    : {}                                  ║", config.getSecurity().getOauth().isEnabled()  ? "Enabled " : "Disabled");
+        logger.info("║  API Key      : {}                                  ║", config.getSecurity().getApiKey().isEnabled() ? "Enabled " : "Disabled");
+        logger.info("║  Auth via     : gRPC metadata headers                      ║");
+        logger.info("╚════════════════════════════════════════════════════════════╝");
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            logger.info("Shutting down NetScope gRPC server...");
-            try {
-                NetScopeGrpcServer.this.stop();
-            } catch (InterruptedException e) {
-                logger.error("Error during shutdown", e);
-            }
+            try { NetScopeGrpcServer.this.stop(); }
+            catch (InterruptedException e) { logger.error("Shutdown error", e); }
         }));
     }
 
@@ -68,9 +85,5 @@ public class NetScopeGrpcServer {
         }
     }
 
-    public void blockUntilShutdown() throws InterruptedException {
-        if (server != null) {
-            server.awaitTermination();
-        }
-    }
+    public int getPort() { return server != null ? server.getPort() : -1; }
 }

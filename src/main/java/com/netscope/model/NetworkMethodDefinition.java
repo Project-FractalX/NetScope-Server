@@ -1,103 +1,110 @@
 package com.netscope.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.netscope.annotation.AuthType;
+
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.List;
 
 /**
- * Represents a method exposed via NetScope (REST and/or gRPC).
+ * Represents a method or field exposed via NetScope gRPC.
  */
 public class NetworkMethodDefinition {
 
-    @JsonIgnore
-    private final Object bean;
+    public enum SourceType { METHOD, FIELD }
 
-    @JsonIgnore
-    private final Method method;
+    @JsonIgnore private final Object bean;
+    @JsonIgnore private final Method method;   // null if field
+    @JsonIgnore private final Field field;     // null if method
 
     private final String beanName;
-    private final String methodName;
-    private final String path;
-    private final String httpMethod;
-    private final boolean restricted;
-    private final String apiKey;
-    private final boolean restEnabled;
-    private final boolean grpcEnabled;
+    private final String methodName;      // for fields: field name
+    private final boolean secured;
+    private final AuthType authType;      // OAUTH, API_KEY, or BOTH (null if public)
+    private final boolean voidReturn;
     private final ParameterInfo[] parameters;
     private final String returnType;
+    private final String description;
+    private final SourceType sourceType;
 
-    public NetworkMethodDefinition(Object bean, Method method, String path, boolean restricted, 
-                                    boolean restEnabled, boolean grpcEnabled) {
-        this.bean = bean;
-        this.method = method;
-        this.beanName = bean.getClass().getSimpleName();
-        this.methodName = method.getName();
-        this.path = path;
-        this.restricted = restricted;
-        this.restEnabled = restEnabled;
-        this.grpcEnabled = grpcEnabled;
-        this.returnType = method.getReturnType().getName();
+    /** Constructor for METHOD */
+    public NetworkMethodDefinition(Object bean, Method method,
+                                   boolean secured, AuthType authType, String description) {
+        this.bean        = bean;
+        this.method      = method;
+        this.field       = null;
+        this.sourceType  = SourceType.METHOD;
+        this.beanName    = bean.getClass().getSimpleName();
+        this.methodName  = method.getName();
+        this.secured     = secured;
+        this.authType    = authType;
+        this.voidReturn  = method.getReturnType() == void.class
+                        || method.getReturnType() == Void.class;
+        this.returnType  = method.getReturnType().getSimpleName();
+        this.description = description != null ? description : "";
 
-        // Extract HTTP method and API key from annotations
-        if (method.isAnnotationPresent(com.netscope.annotation.NetworkSecured.class)) {
-            var annotation = method.getAnnotation(com.netscope.annotation.NetworkSecured.class);
-            this.httpMethod = annotation.method().name();
-            this.apiKey = annotation.key();
-        } else if (method.isAnnotationPresent(com.netscope.annotation.NetworkPublic.class)) {
-            var annotation = method.getAnnotation(com.netscope.annotation.NetworkPublic.class);
-            this.httpMethod = annotation.method().name();
-            this.apiKey = "";
-        } else {
-            this.httpMethod = "GET";
-            this.apiKey = "";
-        }
-
-        // Extract parameter information
         Parameter[] params = method.getParameters();
         this.parameters = new ParameterInfo[params.length];
         for (int i = 0; i < params.length; i++) {
             this.parameters[i] = new ParameterInfo(
-                params[i].getName(),
-                params[i].getType().getName(),
-                i
-            );
+                params[i].getName(), params[i].getType().getSimpleName(), i);
         }
     }
 
-    // Getters
-    public String getBeanName() { return beanName; }
-    public String getMethodName() { return methodName; }
-    public String getPath() { return path; }
-    public String getHttpMethod() { return httpMethod; }
-    public boolean isRestricted() { return restricted; }
-    public String getApiKey() { return apiKey; }
-    public boolean isRestEnabled() { return restEnabled; }
-    public boolean isGrpcEnabled() { return grpcEnabled; }
+    /** Constructor for FIELD */
+    public NetworkMethodDefinition(Object bean, Field field,
+                                   boolean secured, AuthType authType, String description) {
+        this.bean        = bean;
+        this.method      = null;
+        this.field       = field;
+        this.sourceType  = SourceType.FIELD;
+        this.beanName    = bean.getClass().getSimpleName();
+        this.methodName  = field.getName();
+        this.secured     = secured;
+        this.authType    = authType;
+        this.voidReturn  = false;
+        this.returnType  = field.getType().getSimpleName();
+        this.description = description != null ? description : "";
+        this.parameters  = new ParameterInfo[0];  // fields take no parameters
+    }
+
+    // ── Getters ───────────────────────────────────────────────────────────────
+
+    public Object getBean()              { return bean; }
+    public Method getMethod()            { return method; }
+    public Field getField()              { return field; }
+    public String getBeanName()          { return beanName; }
+    public String getMethodName()        { return methodName; }
+    public boolean isSecured()           { return secured; }
+    public AuthType getAuthType()        { return authType; }
+    public boolean isVoidReturn()        { return voidReturn; }
     public ParameterInfo[] getParameters() { return parameters; }
-    public String getReturnType() { return returnType; }
+    public String getReturnType()        { return returnType; }
+    public String getDescription()       { return description; }
+    public SourceType getSourceType()    { return sourceType; }
+    public boolean isField()             { return sourceType == SourceType.FIELD; }
 
-    @JsonIgnore
-    public Object getBean() { return bean; }
+    /** Returns empty list — scopes removed, auth is controlled via AuthType */
+    public List<String> getRequiredScopes() { return List.of(); }
+    public boolean isRequireAllScopes()     { return false; }
 
-    @JsonIgnore
-    public Method getMethod() { return method; }
+    // ── Nested: ParameterInfo ─────────────────────────────────────────────────
 
-    /**
-     * Parameter information for documentation
-     */
     public static class ParameterInfo {
         private final String name;
         private final String type;
         private final int index;
 
         public ParameterInfo(String name, String type, int index) {
-            this.name = name;
-            this.type = type;
+            this.name  = name;
+            this.type  = type;
             this.index = index;
         }
 
-        public String getName() { return name; }
-        public String getType() { return type; }
-        public int getIndex() { return index; }
+        public String getName()  { return name; }
+        public String getType()  { return type; }
+        public int    getIndex() { return index; }
     }
 }

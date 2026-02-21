@@ -1,89 +1,136 @@
 package com.netscope.core;
 
-import com.netscope.annotation.*;
-import com.netscope.mapping.UrlMappingStrategy;
+import com.netscope.annotation.AuthType;
+import com.netscope.annotation.NetworkPublic;
+import com.netscope.annotation.NetworkSecured;
+import com.netscope.config.NetScopeConfig;
 import com.netscope.model.NetworkMethodDefinition;
-import org.springframework.aop.support.AopUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Scans Spring beans for methods annotated with @NetworkPublic or @NetworkSecured.
- */
 public class NetScopeScanner {
 
-    private final ApplicationContext context;
-    private final UrlMappingStrategy mappingStrategy;
+    private static final Logger logger = LoggerFactory.getLogger(NetScopeScanner.class);
 
-    public NetScopeScanner(ApplicationContext context, UrlMappingStrategy mappingStrategy) {
+    private final ApplicationContext context;
+    private final NetScopeConfig config;
+
+    // Cache: "BeanName.memberName" → definition
+    private final Map<String, NetworkMethodDefinition> cache = new ConcurrentHashMap<>();
+    private volatile boolean scanned = false;
+
+    public NetScopeScanner(ApplicationContext context, NetScopeConfig config) {
         this.context = context;
-        this.mappingStrategy = mappingStrategy;
+        this.config  = config;
     }
 
-    /**
-     * Scan all beans for network-exposed methods.
-     */
     public List<NetworkMethodDefinition> scan() {
-        List<NetworkMethodDefinition> list = new ArrayList<>();
+        if (!scanned) {
+            doScan();
+        }
+        return new ArrayList<>(cache.values());
+    }
+
+    public Optional<NetworkMethodDefinition> findMethod(String beanName, String memberName) {
+        if (!scanned) doScan();
+        return Optional.ofNullable(cache.get(beanName + "." + memberName));
+    }
+
+    private synchronized void doScan() {
+        if (scanned) return;
+
+        logger.info("NetScope: scanning for @NetworkPublic and @NetworkSecured members...");
+        int count = 0;
 
         for (String beanName : context.getBeanDefinitionNames()) {
+            Object bean;
             try {
-                Object bean = context.getBean(beanName);
-                Class<?> targetClass = AopUtils.getTargetClass(bean);
-
-                for (Method method : targetClass.getDeclaredMethods()) {
-                    // Check for @NetworkPublic
-                    if (method.isAnnotationPresent(NetworkPublic.class)) {
-                        NetworkPublic annotation = method.getAnnotation(NetworkPublic.class);
-                        String path = annotation.path().isEmpty() 
-                            ? mappingStrategy.buildPath(targetClass, method)
-                            : annotation.path();
-                        
-                        list.add(new NetworkMethodDefinition(
-                            bean, 
-                            method, 
-                            path, 
-                            false,
-                            annotation.enableRest(),
-                            annotation.enableGrpc()
-                        ));
-                    }
-
-                    // Check for @NetworkSecured
-                    if (method.isAnnotationPresent(NetworkSecured.class)) {
-                        NetworkSecured annotation = method.getAnnotation(NetworkSecured.class);
-                        String path = annotation.path().isEmpty() 
-                            ? mappingStrategy.buildPath(targetClass, method)
-                            : annotation.path();
-                        
-                        list.add(new NetworkMethodDefinition(
-                            bean, 
-                            method, 
-                            path, 
-                            true,
-                            annotation.enableRest(),
-                            annotation.enableGrpc()
-                        ));
-                    }
-                }
+                bean = context.getBean(beanName);
             } catch (Exception e) {
-                // Skip beans that can't be instantiated
+                continue;
+            }
+
+            Class<?> clazz = getTargetClass(bean);
+
+            // ── Scan METHODS ─────────────────────────────────────────────────
+            for (Method method : clazz.getDeclaredMethods()) {
+                NetworkMethodDefinition def = null;
+
+                NetworkPublic pub = method.getAnnotation(NetworkPublic.class);
+                if (pub != null) {
+                    def = new NetworkMethodDefinition(bean, method, false, null,
+                            pub.description());
+                }
+
+                NetworkSecured sec = method.getAnnotation(NetworkSecured.class);
+                if (sec != null) {
+                    def = new NetworkMethodDefinition(bean, method, true, sec.auth(),
+                            sec.description());
+                }
+
+                if (def != null) {
+                    String key = def.getBeanName() + "." + def.getMethodName();
+                    cache.put(key, def);
+                    logger.info("  [{}] {}.{} → {} | auth={}",
+                            def.isField() ? "field" : "method",
+                            def.getBeanName(), def.getMethodName(),
+                            def.isSecured() ? "SECURED" : "PUBLIC",
+                            def.getAuthType());
+                    count++;
+                }
+            }
+
+            // ── Scan FIELDS ──────────────────────────────────────────────────
+            for (Field field : clazz.getDeclaredFields()) {
+                NetworkMethodDefinition def = null;
+
+                NetworkPublic pub = field.getAnnotation(NetworkPublic.class);
+                if (pub != null) {
+                    field.setAccessible(true);
+                    def = new NetworkMethodDefinition(bean, field, false, null,
+                            pub.description());
+                }
+
+                NetworkSecured sec = field.getAnnotation(NetworkSecured.class);
+                if (sec != null) {
+                    field.setAccessible(true);
+                    def = new NetworkMethodDefinition(bean, field, true, sec.auth(),
+                            sec.description());
+                }
+
+                if (def != null) {
+                    String key = def.getBeanName() + "." + def.getMethodName();
+                    cache.put(key, def);
+                    logger.info("  [field] {}.{} → {} | auth={}",
+                            def.getBeanName(), def.getMethodName(),
+                            def.isSecured() ? "SECURED" : "PUBLIC",
+                            def.getAuthType());
+                    count++;
+                }
             }
         }
 
-        return list;
+        scanned = true;
+        logger.info("NetScope: scan complete — {} member(s) registered", count);
     }
 
-    /**
-     * Get method definition by bean name and method name.
-     */
-    public Optional<NetworkMethodDefinition> findMethod(List<NetworkMethodDefinition> methods, 
-                                                        String beanName, 
-                                                        String methodName) {
-        return methods.stream()
-            .filter(m -> m.getBeanName().equals(beanName) && m.getMethodName().equals(methodName))
-            .findFirst();
+    /** Unwrap Spring proxies to get the real class */
+    private Class<?> getTargetClass(Object bean) {
+        try {
+            Class<?> clazz = bean.getClass();
+            // Handle CGLIB proxies
+            if (clazz.getName().contains("$$")) {
+                return clazz.getSuperclass();
+            }
+            return clazz;
+        } catch (Exception e) {
+            return bean.getClass();
+        }
     }
 }
