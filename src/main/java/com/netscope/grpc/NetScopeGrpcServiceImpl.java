@@ -33,6 +33,22 @@ public class NetScopeGrpcServiceImpl extends NetScopeServiceGrpc.NetScopeService
     }
 
     /**
+     * Converts a protobuf ListValue into a JSON array string for the invoker.
+     */
+    private String toArgumentsJson(com.google.protobuf.ListValue listValue) {
+        if (listValue == null || listValue.getValuesCount() == 0) {
+            return "[]";
+        }
+        try {
+            Value arrayValue = Value.newBuilder().setListValue(listValue).build();
+            return JsonFormat.printer().omittingInsignificantWhitespace().print(arrayValue);
+        } catch (Exception e) {
+            logger.warn("Could not serialize arguments ListValue to JSON: {}", e.getMessage());
+            return "[]";
+        }
+    }
+
+    /**
      * Converts a JSON string into a google.protobuf.Value.
      * Handles objects {}, arrays [], strings, numbers, booleans, and null.
      */
@@ -78,7 +94,7 @@ public class NetScopeGrpcServiceImpl extends NetScopeServiceGrpc.NetScopeService
                 return;
             }
 
-            String resultJson = invoker.invoke(method, request.getArgumentsJson());
+            String resultJson = invoker.invoke(method, toArgumentsJson(request.getArguments()));
 
             // Convert JSON string → native protobuf Value
             InvokeResponse response = InvokeResponse.newBuilder()
@@ -153,7 +169,7 @@ public class NetScopeGrpcServiceImpl extends NetScopeServiceGrpc.NetScopeService
                     }
                     NetworkMethodDefinition method = methodOpt.get();
                     authService.authorize(method, accessToken, apiKey);
-                    String resultJson = invoker.invoke(method, request.getArgumentsJson());
+                    String resultJson = invoker.invoke(method, toArgumentsJson(request.getArguments()));
                     responseObserver.onNext(InvokeResponse.newBuilder()
                             .setResult(toProtoValue(resultJson))
                             .build());

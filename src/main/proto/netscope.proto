@@ -9,10 +9,10 @@ option java_outer_classname = "NetScopeProto";
 package netscope;
 
 message InvokeRequest {
-  string bean_name       = 1;
-  string method_name     = 2;
-  string arguments_json  = 3;
-  repeated string parameter_types = 4;
+  string bean_name                  = 1;
+  string method_name                = 2;
+  google.protobuf.ListValue arguments = 3;
+  repeated string parameter_types   = 4;
 }
 
 message InvokeResponse {
