@@ -1,27 +1,30 @@
-# NetScope gRPC v2.0 - Pure gRPC with OAuth 2.0
+# NetScope gRPC
 
-**NetScope** is a **pure gRPC Spring Boot library** that automatically exposes Spring bean methods as gRPC endpoints with **OAuth 2.0 authentication**.
-
-## 🚀 What's New in v2.0
-
-- ✅ **Pure gRPC** - REST support completely removed
-- ✅ **OAuth 2.0 Authentication** - JWT-based security with scope validation
-- ✅ **Simplified Response** - `result_json` as the main response field
-- ✅ **gRPC Status Codes** - Proper status code management
-- ✅ **Fully Configurable** - All parameters via application.properties/yaml
-- ✅ **Production Ready** - Enterprise-grade security and performance
+**NetScope** is a Spring Boot library that automatically exposes annotated bean **methods and fields** as gRPC endpoints with built-in OAuth 2.0 and API key authentication.
 
 ---
 
-## 📦 Installation
+## Features
 
-### 1. Install to Local Maven Repository
+- Expose bean methods and fields over gRPC with a single annotation
+- Dual authentication: OAuth 2.0 JWT and/or API key per member
+- Read and write field attributes remotely via dedicated RPCs
+- Inherited field scanning across the full class hierarchy
+- Static and final field awareness
+- Bidirectional streaming support
+- Live introspection via `GetDocs` RPC
+
+---
+
+## Installation
+
+### 1. Build and install locally
 
 ```bash
 mvn clean install
 ```
 
-### 2. Add Dependency
+### 2. Add dependency
 
 ```xml
 <dependency>
@@ -33,51 +36,34 @@ mvn clean install
 
 ---
 
-## ⚙️ Configuration
-
-All settings are configurable via `application.properties` or `application.yaml`:
-
-### Complete Configuration Example
+## Configuration
 
 ```yaml
 netscope:
-  # gRPC Server Configuration
   grpc:
     enabled: true
     port: 9090
-    maxInboundMessageSize: 4194304  # 4MB
+    maxInboundMessageSize: 4194304        # 4 MB
     maxConcurrentCallsPerConnection: 100
-    keepAliveTime: 300              # seconds
-    keepAliveTimeout: 20            # seconds
+    keepAliveTime: 300                    # seconds
+    keepAliveTimeout: 20
     permitKeepAliveWithoutCalls: false
-    maxConnectionIdle: 0            # 0 = infinite
-    maxConnectionAge: 0             # 0 = infinite
+    maxConnectionIdle: 0                  # 0 = infinite
+    maxConnectionAge: 0
     enableReflection: true
 
-  # OAuth 2.0 Security Configuration
   security:
     enabled: true
     issuerUri: https://auth.example.com
     jwkSetUri: https://auth.example.com/.well-known/jwks.json
     audiences:
       - https://api.example.com
-      - my-api-audience
-    tokenCacheDuration: 300         # seconds
-    clockSkew: 60                   # seconds
-    allowPublicMethods: true
-    requireHttps: false
-
-  # Service Discovery Configuration
-  discovery:
-    enabled: true
-    basePackages:
-      - com.example.service
-      - com.myapp.api
-    includeParameterNames: true
-    includeReturnTypes: true
+    tokenCacheDuration: 300               # seconds
+    clockSkew: 60
+    apiKey: your-secret-api-key
 ```
 
-### Minimal Configuration
+### Minimal configuration
 
 ```yaml
 netscope:
@@ -88,226 +74,290 @@ netscope:
     jwkSetUri: https://your-auth-server.com/.well-known/jwks.json
     audiences:
       - your-api-audience
+    apiKey: your-api-key
 ```
 
 ---
 
-## 💻 Usage
+## Annotations
 
-### 1. Annotate Your Methods
+### `@NetworkPublic`
+
+No authentication required. Usable on methods and fields.
 
 ```java
-package com.example.service;
-
-import com.netscope.annotation.NetworkPublic;
-import com.netscope.annotation.NetworkSecured;
-import org.springframework.stereotype.Service;
-
-@Service
-public class CustomerService {
-
-    // Public endpoint - no authentication required
-    @NetworkPublic(description = "Get all customer IDs")
-    public List<String> listCustomerIds() {
-        return List.of("CUST001", "CUST002", "CUST003");
-    }
-
-    // Secured endpoint - requires OAuth token with specific scope
-    @NetworkSecured(
-        scopes = {"read:customers"},
-        description = "Get customer details by ID"
-    )
-    public Customer getCustomer(String customerId) {
-        // Business logic
-        return new Customer(customerId, "John Doe");
-    }
-
-    // Multiple scopes - requires ALL scopes
-    @NetworkSecured(
-        scopes = {"read:customers", "read:orders"},
-        requireAllScopes = true,
-        description = "Get customer with full details"
-    )
-    public CustomerFull getCustomerFull(String customerId) {
-        // Business logic
-        return new CustomerFull(/*...*/);
-    }
-
-    // Multiple scopes - requires ANY scope
-    @NetworkSecured(
-        scopes = {"admin", "super:user"},
-        requireAllScopes = false,
-        description = "Delete customer"
-    )
-    public boolean deleteCustomer(String customerId) {
-        // Admin operation
-        return true;
-    }
+@NetworkPublic(description = "Current app version")
+public String getVersion() {
+    return "2.0.0";
 }
+
+@NetworkPublic(description = "Build identifier")
+public static final String BUILD_ID = "abc123";   // readable, not writable (final)
+
+@NetworkPublic(description = "Feature flag")
+private boolean maintenanceMode = false;           // readable and writable
 ```
+
+### `@NetworkSecured`
+
+Requires authentication. The `auth` parameter is mandatory and selects which credential type is accepted.
+
+| `auth` value | Accepted credential |
+|---|---|
+| `AuthType.OAUTH` | OAuth 2.0 JWT Bearer token only |
+| `AuthType.API_KEY` | API key only |
+| `AuthType.BOTH` | Either OAuth or API key |
+
+```java
+@NetworkSecured(auth = AuthType.OAUTH, description = "Get customer by ID")
+public Customer getCustomer(String customerId) { ... }
+
+@NetworkSecured(auth = AuthType.API_KEY, description = "Delete customer")
+public void deleteCustomer(String customerId) { ... }  // returns {"status":"accepted"}
+
+@NetworkSecured(auth = AuthType.BOTH, description = "Internal request counter")
+private int requestCount = 0;                          // readable and writable
+
+@NetworkSecured(auth = AuthType.OAUTH, description = "Secret token")
+private static final String SECRET = "tok_abc";        // readable, not writable (final)
+```
+
+### Annotating fields vs methods
+
+| Annotation target | Behaviour |
+|---|---|
+| Method | Callable via `InvokeMethod` RPC |
+| Non-final field | Readable via `InvokeMethod`, writable via `SetAttribute` |
+| Final field | Readable via `InvokeMethod` only — writes are rejected |
+| Static field/method | Supported; no bean instance required |
+| Inherited field | Scanned automatically up the full superclass chain |
 
 ---
 
-## 🔐 OAuth 2.0 Authentication
+## gRPC API
 
-### Token Format
-
-NetScope expects **JWT Bearer tokens** with the following structure:
-
-```json
-{
-  "iss": "https://auth.example.com",
-  "sub": "user123",
-  "aud": ["https://api.example.com"],
-  "exp": 1708027200,
-  "scope": "read:customers write:customers admin"
-}
-```
-
-### Scope Formats Supported
-
-Both formats are supported:
-
-1. **Space-separated string** (OAuth 2.0 standard):
-   ```json
-   {
-     "scope": "read:customers write:customers admin"
-   }
-   ```
-
-2. **Array format** (Azure AD, Auth0):
-   ```json
-   {
-     "scp": ["read:customers", "write:customers", "admin"]
-   }
-   ```
-
----
-
-## 📡 gRPC API Usage
-
-### Protocol Buffer Definition
+### Protocol Buffer definition
 
 ```protobuf
+enum MemberKind {
+  METHOD = 0;
+  FIELD  = 1;
+}
+
+// Invoke a method or read a field value
 message InvokeRequest {
-  string bean_name = 1;           // e.g., "CustomerService"
-  string method_name = 2;         // e.g., "getCustomer"
-  string arguments_json = 3;      // JSON array: ["CUST001"]
-  string access_token = 4;        // OAuth 2.0 JWT token
-  repeated string parameter_types = 5;
+  string bean_name                    = 1;
+  string member_name                  = 2;
+  google.protobuf.ListValue arguments = 3;  // empty for fields and no-arg methods
+  repeated string parameter_types     = 4;
 }
 
 message InvokeResponse {
-  string result_json = 1;         // Direct JSON result
+  google.protobuf.Value result = 1;  // any JSON type: object, array, primitive, null
+}
+
+// Write a value to a non-final field
+message SetAttributeRequest {
+  string bean_name      = 1;
+  string attribute_name = 2;
+  google.protobuf.Value value = 3;
+}
+
+message SetAttributeResponse {
+  google.protobuf.Value previous_value = 1;  // value before the write
+}
+
+// Introspect all exposed members
+message MethodInfo {
+  string bean_name                  = 1;
+  string member_name                = 2;
+  bool   secured                    = 3;
+  string return_type                = 4;
+  repeated ParameterInfo parameters = 5;
+  repeated string required_scopes   = 6;
+  string description                = 7;
+  MemberKind kind                   = 8;  // METHOD or FIELD
+  bool writeable                    = 9;  // true for non-final fields
+  bool is_static                    = 10;
+  bool is_final                     = 11;
+}
+
+service NetScopeService {
+  rpc InvokeMethod       (InvokeRequest)           returns (InvokeResponse);
+  rpc SetAttribute       (SetAttributeRequest)      returns (SetAttributeResponse);
+  rpc GetDocs            (DocsRequest)              returns (DocsResponse);
+  rpc InvokeMethodStream (stream InvokeRequest)     returns (stream InvokeResponse);
 }
 ```
 
-### Java Client Example
+### Authentication headers
+
+Credentials are passed as gRPC metadata headers — never in the request message body.
+
+| Header | Value | Used for |
+|---|---|---|
+| `authorization` | `Bearer <jwt>` | OAuth 2.0 token |
+| `x-api-key` | `<key>` | API key |
+
+---
+
+## Usage examples
+
+### grpcurl
+
+```bash
+# Read a public field
+grpcurl -plaintext -d '{
+  "bean_name": "AppService",
+  "member_name": "appVersion"
+}' localhost:9090 netscope.NetScopeService/InvokeMethod
+
+# Invoke a secured method (OAuth)
+grpcurl -plaintext \
+  -H 'authorization: Bearer eyJhbGci...' \
+  -d '{
+    "bean_name": "CustomerService",
+    "member_name": "getCustomer",
+    "arguments": [{"string_value": "CUST001"}]
+  }' localhost:9090 netscope.NetScopeService/InvokeMethod
+
+# Write a field value (API key auth)
+grpcurl -plaintext \
+  -H 'x-api-key: your-api-key' \
+  -d '{
+    "bean_name": "AppService",
+    "attribute_name": "maintenanceMode",
+    "value": {"bool_value": true}
+  }' localhost:9090 netscope.NetScopeService/SetAttribute
+
+# Introspect all exposed members
+grpcurl -plaintext -d '{}' localhost:9090 netscope.NetScopeService/GetDocs
+```
+
+### Java client
 
 ```java
-import com.netscope.grpc.proto.*;
-import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
+ManagedChannel channel = ManagedChannelBuilder
+    .forAddress("localhost", 9090)
+    .usePlaintext()
+    .build();
 
-public class NetScopeClient {
-    public static void main(String[] args) {
-        // Create channel
-        ManagedChannel channel = ManagedChannelBuilder
-            .forAddress("localhost", 9090)
-            .usePlaintext()
-            .build();
+NetScopeServiceGrpc.NetScopeServiceBlockingStub stub =
+    NetScopeServiceGrpc.newBlockingStub(channel);
 
-        NetScopeServiceGrpc.NetScopeServiceBlockingStub stub = 
-            NetScopeServiceGrpc.newBlockingStub(channel);
+// Add OAuth token as metadata
+Metadata headers = new Metadata();
+headers.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
+            "Bearer " + accessToken);
+stub = MetadataUtils.attachHeaders(stub, headers);
 
-        // Get OAuth token (from your auth server)
-        String accessToken = getAccessToken();
+// Invoke a method
+InvokeRequest methodRequest = InvokeRequest.newBuilder()
+    .setBeanName("CustomerService")
+    .setMemberName("getCustomer")
+    .setArguments(ListValue.newBuilder()
+        .addValues(Value.newBuilder().setStringValue("CUST001")))
+    .build();
 
-        // Call secured method
-        InvokeRequest request = InvokeRequest.newBuilder()
-            .setBeanName("CustomerService")
-            .setMethodName("getCustomer")
-            .setArgumentsJson("[\"CUST001\"]")
-            .setAccessToken(accessToken)
-            .build();
+InvokeResponse response = stub.invokeMethod(methodRequest);
+System.out.println(response.getResult());
 
-        InvokeResponse response = stub.invokeMethod(request);
-        System.out.println("Result: " + response.getResultJson());
+// Read a field attribute
+InvokeRequest fieldRead = InvokeRequest.newBuilder()
+    .setBeanName("AppService")
+    .setMemberName("maintenanceMode")
+    .build();
 
-        channel.shutdown();
-    }
+InvokeResponse fieldResponse = stub.invokeMethod(fieldRead);
+System.out.println(fieldResponse.getResult());  // e.g. false
 
-    private static String getAccessToken() {
-        // Implement OAuth 2.0 client credentials or authorization code flow
-        // This depends on your OAuth provider (Keycloak, Auth0, Azure AD, etc.)
-        return "eyJhbGciOiJSUzI1NiIs...";
-    }
-}
+// Write a field attribute
+SetAttributeRequest writeRequest = SetAttributeRequest.newBuilder()
+    .setBeanName("AppService")
+    .setAttributeName("maintenanceMode")
+    .setValue(Value.newBuilder().setBoolValue(true))
+    .build();
+
+SetAttributeResponse writeResponse = stub.setAttribute(writeRequest);
+System.out.println("Previous: " + writeResponse.getPreviousValue());  // false
+
+channel.shutdown();
 ```
 
-### Python Client Example
+### Python client
 
 ```python
 import grpc
-from netscope_pb2 import InvokeRequest
+from google.protobuf import struct_pb2
+from netscope_pb2 import InvokeRequest, SetAttributeRequest
 from netscope_pb2_grpc import NetScopeServiceStub
 
-# Create channel
 channel = grpc.insecure_channel('localhost:9090')
 stub = NetScopeServiceStub(channel)
 
-# Get OAuth token
-access_token = get_access_token()  # Your OAuth implementation
+# OAuth metadata
+metadata = [('authorization', f'Bearer {access_token}')]
 
-# Call method
+# Invoke a method
 request = InvokeRequest(
     bean_name="CustomerService",
-    method_name="getCustomer",
-    arguments_json='["CUST001"]',
-    access_token=access_token
+    member_name="getCustomer"
 )
+request.arguments.values.append(struct_pb2.Value(string_value="CUST001"))
+response = stub.InvokeMethod(request, metadata=metadata)
+print(response.result)
 
-response = stub.InvokeMethod(request)
-print(f"Result: {response.result_json}")
+# Write a field
+write = SetAttributeRequest(
+    bean_name="AppService",
+    attribute_name="maintenanceMode",
+    value=struct_pb2.Value(bool_value=True)
+)
+wr = stub.SetAttribute(write, metadata=[('x-api-key', 'your-api-key')])
+print("Previous:", wr.previous_value)
 ```
 
-### Using grpcurl
+### Streaming
 
-```bash
-# Public method (no token)
-grpcurl -plaintext -d '{
-  "bean_name": "CustomerService",
-  "method_name": "listCustomerIds",
-  "arguments_json": "[]"
-}' localhost:9090 netscope.NetScopeService/InvokeMethod
+```java
+NetScopeServiceGrpc.NetScopeServiceStub asyncStub =
+    NetScopeServiceGrpc.newStub(channel);
 
-# Secured method (with token)
-grpcurl -plaintext -d '{
-  "bean_name": "CustomerService",
-  "method_name": "getCustomer",
-  "arguments_json": "[\"CUST001\"]",
-  "access_token": "eyJhbGciOiJSUzI1NiIs..."
-}' localhost:9090 netscope.NetScopeService/InvokeMethod
+StreamObserver<InvokeRequest> requestStream =
+    asyncStub.invokeMethodStream(new StreamObserver<InvokeResponse>() {
+        @Override public void onNext(InvokeResponse r)  { System.out.println(r.getResult()); }
+        @Override public void onError(Throwable t)      { t.printStackTrace(); }
+        @Override public void onCompleted()              { System.out.println("done"); }
+    });
+
+for (int i = 0; i < 10; i++) {
+    requestStream.onNext(InvokeRequest.newBuilder()
+        .setBeanName("DataService")
+        .setMemberName("processItem")
+        .setArguments(ListValue.newBuilder()
+            .addValues(Value.newBuilder().setNumberValue(i)))
+        .build());
+}
+requestStream.onCompleted();
 ```
 
 ---
 
-## 📊 gRPC Status Codes
+## gRPC status codes
 
-NetScope uses standard gRPC status codes:
-
-| Status | When It's Used |
-|--------|----------------|
-| `OK` | Successful invocation |
-| `NOT_FOUND` | Method not found |
-| `UNAUTHENTICATED` | Missing or invalid token |
-| `PERMISSION_DENIED` | Insufficient scopes |
-| `INVALID_ARGUMENT` | Invalid method arguments |
-| `INTERNAL` | Server error during invocation |
+| Status | When |
+|---|---|
+| `OK` | Successful invocation or write |
+| `NOT_FOUND` | Bean or member name not found |
+| `UNAUTHENTICATED` | Missing or invalid credentials |
+| `PERMISSION_DENIED` | Wrong credential type for the member |
+| `FAILED_PRECONDITION` | Attempt to write a `final` field |
+| `INVALID_ARGUMENT` | Wrong number of arguments, or calling `SetAttribute` on a method |
+| `INTERNAL` | Unexpected server error |
 
 ---
 
-## 🔧 OAuth 2.0 Setup Examples
+## OAuth 2.0 provider examples
 
 ### Keycloak
 
@@ -342,264 +392,54 @@ netscope:
       - api://{client-id}
 ```
 
-### Custom JWT Issuer
-
-```yaml
-netscope:
-  security:
-    issuerUri: https://your-auth-server.com
-    jwkSetUri: https://your-auth-server.com/.well-known/jwks.json
-    audiences:
-      - your-api-audience
-    clockSkew: 60
-    tokenCacheDuration: 300
-```
-
 ---
 
-## 🎯 Advanced Features
-
-### Scope Validation Modes
-
-#### Require ALL Scopes (AND)
-```java
-@NetworkSecured(
-    scopes = {"read:customers", "read:orders"},
-    requireAllScopes = true  // Must have BOTH scopes
-)
-```
-
-#### Require ANY Scope (OR)
-```java
-@NetworkSecured(
-    scopes = {"admin", "super:admin"},
-    requireAllScopes = false  // Must have AT LEAST ONE
-)
-```
-
-### Streaming Support
-
-```java
-// Client-side streaming
-StreamObserver<InvokeRequest> requestStream = 
-    asyncStub.invokeMethodStream(new StreamObserver<InvokeResponse>() {
-        @Override
-        public void onNext(InvokeResponse response) {
-            System.out.println("Result: " + response.getResultJson());
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            System.err.println("Error: " + t.getMessage());
-        }
-
-        @Override
-        public void onCompleted() {
-            System.out.println("Stream completed");
-        }
-    });
-
-// Send multiple requests
-for (int i = 0; i < 10; i++) {
-    InvokeRequest request = InvokeRequest.newBuilder()
-        .setBeanName("DataService")
-        .setMethodName("processData")
-        .setArgumentsJson("[" + i + "]")
-        .setAccessToken(token)
-        .build();
-    requestStream.onNext(request);
-}
-requestStream.onCompleted();
-```
-
-### Package Filtering
-
-Limit scanning to specific packages:
-
-```yaml
-netscope:
-  discovery:
-    basePackages:
-      - com.example.api
-      - com.example.service
-```
-
-### Disable Security (Development Only)
-
-```yaml
-netscope:
-  security:
-    enabled: false  # WARNING: Only for development!
-```
-
----
-
-## 🔍 Monitoring & Logging
-
-### Enable Debug Logging
+## Monitoring and logging
 
 ```yaml
 logging:
   level:
     com.netscope: DEBUG
     io.grpc: INFO
-```
-
-### Suppress gRPC Transport Errors
-
-```yaml
-logging:
-  level:
     io.grpc.netty.shaded.io.netty.handler.codec.http2: ERROR
 ```
 
 ---
 
-## 🚨 Security Best Practices
+## Troubleshooting
 
-1. **Always use HTTPS in production**
-   ```yaml
-   netscope:
-     security:
-       requireHttps: true
-   ```
+### `NOT_FOUND: Member not found`
+- Bean name and member name are case-sensitive
+- The field or method must have `@NetworkPublic` or `@NetworkSecured`
+- The bean must be a Spring-managed component (`@Service`, `@Component`, etc.)
 
-2. **Use short-lived tokens**
-   - Recommended: 15-60 minutes
-   - Configure in your OAuth server
+### `UNAUTHENTICATED`
+- Check that the `authorization` or `x-api-key` header is present in the request metadata
+- Verify the JWT is not expired and its issuer/audience match configuration
 
-3. **Implement token refresh**
-   - Clients should handle token expiration
-   - Refresh before expiration
+### `FAILED_PRECONDITION: Attribute is final`
+- `SetAttribute` cannot write to `final` fields; use `InvokeMethod` to read them
 
-4. **Use specific scopes**
-   - Don't use broad scopes like `*` or `admin`
-   - Define fine-grained permissions
-
-5. **Validate audiences**
-   ```yaml
-   netscope:
-     security:
-       audiences:
-         - https://your-specific-api.com
-   ```
-
-6. **Monitor failed authentications**
-   - Set up alerts for UNAUTHENTICATED/PERMISSION_DENIED
+### `INVALID_ARGUMENT` on `SetAttribute`
+- You called `SetAttribute` with a method name — use `InvokeMethod` for methods
 
 ---
 
-## 📈 Performance Tuning
+## Security best practices
 
-### Connection Settings
-
-```yaml
-netscope:
-  grpc:
-    maxConcurrentCallsPerConnection: 100
-    maxConnectionIdle: 300
-    maxConnectionAge: 3600
-    keepAliveTime: 300
-    keepAliveTimeout: 20
-```
-
-### Message Size
-
-```yaml
-netscope:
-  grpc:
-    maxInboundMessageSize: 10485760  # 10MB for large payloads
-```
-
-### Token Caching
-
-```yaml
-netscope:
-  security:
-    tokenCacheDuration: 300  # Cache validated tokens for 5 minutes
-```
+- Always enable TLS in production
+- Use short-lived JWT tokens (15–60 minutes) and implement refresh on the client
+- Prefer `AuthType.OAUTH` for user-facing endpoints and `AuthType.API_KEY` for service-to-service
+- Never annotate fields that hold credentials or internal secrets as `@NetworkPublic`
+- Use `final` to mark attributes that must never be remotely modified
 
 ---
 
-## 🛠️ Troubleshooting
-
-### Issue: "UNAUTHENTICATED: Authentication failed"
-
-**Check:**
-1. Token is valid and not expired
-2. Token issuer matches configuration
-3. Token audience matches configuration
-4. JWK Set URI is accessible
-
-### Issue: "PERMISSION_DENIED: Insufficient scopes"
-
-**Check:**
-1. Token contains required scopes
-2. Scope format (space-separated vs array)
-3. `requireAllScopes` setting
-
-### Issue: "NOT_FOUND: Method not found"
-
-**Check:**
-1. Bean name is exact (case-sensitive)
-2. Method name is exact (case-sensitive)
-3. Method has `@NetworkPublic` or `@NetworkSecured` annotation
-4. Service is a Spring bean (`@Service`, `@Component`)
-
----
-
-## 📚 Migration from v1.x
-
-### Changes
-
-| v1.x | v2.0 |
-|------|------|
-| REST + gRPC | gRPC Only |
-| API Keys | OAuth 2.0 |
-| `@NetworkRestricted(key="...")` | `@NetworkSecured(scopes={...})` |
-| Multi-field response | `result_json` only |
-| HTTP status codes | gRPC status codes |
-
-### Migration Steps
-
-1. **Update annotations:**
-   ```java
-   // Before
-   @NetworkRestricted(key = "my-key")
-   
-   // After
-   @NetworkSecured(scopes = {"read:resource"})
-   ```
-
-2. **Update configuration:**
-   ```yaml
-   # Before
-   netscope:
-     security:
-       apiKey: my-secret-key
-   
-   # After
-   netscope:
-     security:
-       issuerUri: https://auth.example.com
-       jwkSetUri: https://auth.example.com/.well-known/jwks.json
-   ```
-
-3. **Update clients:**
-   - Replace API key with OAuth token
-   - Use only `result_json` field from response
-
----
-
-## 📄 License
+## License
 
 Apache License 2.0
 
-## 👥 Authors
+## Authors
 
 - **Sathnindu Kottage** - [@sathninduk](https://github.com/sathninduk)
 - **FractalX Team** - [https://github.com/project-FractalX](https://github.com/project-FractalX)
-
----
-
-**NetScope v2.0 - Pure gRPC with Enterprise Security** 🚀
