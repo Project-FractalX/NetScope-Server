@@ -32,7 +32,7 @@ mvn clean install
 ```xml
 <dependency>
     <groupId>com.netscope</groupId>
-    <artifactId>netscope-grpc</artifactId>
+    <artifactId>netscope</artifactId>
     <version>2.0.0-SNAPSHOT</version>
 </dependency>
 ```
