@@ -49,6 +49,19 @@ public class NetScopeGrpcServiceImpl extends NetScopeServiceGrpc.NetScopeService
     }
 
     /**
+     * Converts a protobuf Value into a JSON string for the invoker.
+     */
+    private String toValueJson(Value value) {
+        if (value == null) return "null";
+        try {
+            return JsonFormat.printer().omittingInsignificantWhitespace().print(value);
+        } catch (Exception e) {
+            logger.warn("Could not serialize Value to JSON: {}", e.getMessage());
+            return "null";
+        }
+    }
+
+    /**
      * Converts a JSON string into a google.protobuf.Value.
      * Handles objects {}, arrays [], strings, numbers, booleans, and null.
      */
@@ -75,12 +88,12 @@ public class NetScopeGrpcServiceImpl extends NetScopeServiceGrpc.NetScopeService
             String apiKey      = NetScopeAuthInterceptor.API_KEY_CTX.get();
 
             Optional<NetworkMethodDefinition> methodOpt =
-                    scanner.findMethod(request.getBeanName(), request.getMethodName());
+                    scanner.findMethod(request.getBeanName(), request.getMemberName());
 
             if (methodOpt.isEmpty()) {
                 responseObserver.onError(Status.NOT_FOUND
-                        .withDescription("Method not found: "
-                                + request.getBeanName() + "." + request.getMethodName())
+                        .withDescription("Member not found: "
+                                + request.getBeanName() + "." + request.getMemberName())
                         .asRuntimeException());
                 return;
             }
@@ -96,7 +109,6 @@ public class NetScopeGrpcServiceImpl extends NetScopeServiceGrpc.NetScopeService
 
             String resultJson = invoker.invoke(method, toArgumentsJson(request.getArguments()));
 
-            // Convert JSON string → native protobuf Value
             InvokeResponse response = InvokeResponse.newBuilder()
                     .setResult(toProtoValue(resultJson))
                     .build();
@@ -107,7 +119,7 @@ public class NetScopeGrpcServiceImpl extends NetScopeServiceGrpc.NetScopeService
         } catch (io.grpc.StatusRuntimeException e) {
             responseObserver.onError(e);
         } catch (Exception e) {
-            logger.error("Error invoking {}.{}", request.getBeanName(), request.getMethodName(), e);
+            logger.error("Error invoking {}.{}", request.getBeanName(), request.getMemberName(), e);
             responseObserver.onError(Status.INTERNAL
                     .withDescription("Invocation error: " + e.getMessage())
                     .asRuntimeException());
@@ -115,21 +127,91 @@ public class NetScopeGrpcServiceImpl extends NetScopeServiceGrpc.NetScopeService
     }
 
     @Override
+    public void setAttribute(SetAttributeRequest request,
+                             StreamObserver<SetAttributeResponse> responseObserver) {
+        try {
+            String accessToken = NetScopeAuthInterceptor.ACCESS_TOKEN_CTX.get();
+            String apiKey      = NetScopeAuthInterceptor.API_KEY_CTX.get();
+
+            Optional<NetworkMethodDefinition> defOpt =
+                    scanner.findMethod(request.getBeanName(), request.getAttributeName());
+
+            if (defOpt.isEmpty()) {
+                responseObserver.onError(Status.NOT_FOUND
+                        .withDescription("Attribute not found: "
+                                + request.getBeanName() + "." + request.getAttributeName())
+                        .asRuntimeException());
+                return;
+            }
+
+            NetworkMethodDefinition def = defOpt.get();
+
+            if (!def.isField()) {
+                responseObserver.onError(Status.INVALID_ARGUMENT
+                        .withDescription(request.getAttributeName() + " is a method, not an attribute. "
+                                + "Use InvokeMethod to call methods.")
+                        .asRuntimeException());
+                return;
+            }
+
+            if (!def.isWriteable()) {
+                responseObserver.onError(Status.FAILED_PRECONDITION
+                        .withDescription("Attribute is final and cannot be written: "
+                                + def.getBeanName() + "." + def.getMethodName())
+                        .asRuntimeException());
+                return;
+            }
+
+            try {
+                authService.authorize(def, accessToken, apiKey);
+            } catch (io.grpc.StatusRuntimeException e) {
+                responseObserver.onError(e);
+                return;
+            }
+
+            String valueJson    = toValueJson(request.getValue());
+            String previousJson = invoker.write(def, valueJson);
+
+            SetAttributeResponse response = SetAttributeResponse.newBuilder()
+                    .setPreviousValue(toProtoValue(previousJson))
+                    .build();
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+
+        } catch (io.grpc.StatusRuntimeException e) {
+            responseObserver.onError(e);
+        } catch (Exception e) {
+            logger.error("Error writing attribute {}.{}",
+                    request.getBeanName(), request.getAttributeName(), e);
+            responseObserver.onError(Status.INTERNAL
+                    .withDescription("Write error: " + e.getMessage())
+                    .asRuntimeException());
+        }
+    }
+
+    @Override
     public void getDocs(DocsRequest request, StreamObserver<DocsResponse> responseObserver) {
         try {
-            List<NetworkMethodDefinition> methods = scanner.scan();
+            List<NetworkMethodDefinition> members = scanner.scan();
             DocsResponse.Builder response = DocsResponse.newBuilder();
 
-            for (NetworkMethodDefinition method : methods) {
-                MethodInfo.Builder info = MethodInfo.newBuilder()
-                        .setBeanName(method.getBeanName())
-                        .setMethodName(method.getMethodName())
-                        .setSecured(method.isSecured())
-                        .setReturnType(method.getReturnType())
-                        .setDescription(method.getDescription())
-                        .addAllRequiredScopes(method.getRequiredScopes());
+            for (NetworkMethodDefinition member : members) {
+                MemberKind kind = member.isField() ? MemberKind.FIELD : MemberKind.METHOD;
 
-                for (NetworkMethodDefinition.ParameterInfo p : method.getParameters()) {
+                MethodInfo.Builder info = MethodInfo.newBuilder()
+                        .setBeanName(member.getBeanName())
+                        .setMemberName(member.getMethodName())
+                        .setSecured(member.isSecured())
+                        .setReturnType(member.getReturnType())
+                        .setDescription(member.getDescription())
+                        .addAllRequiredScopes(member.getRequiredScopes())
+                        .setKind(kind)
+                        .setWriteable(member.isWriteable())
+                        .setIsStatic(member.isStatic())
+                        .setIsFinal(member.isFinal());
+
+                for (NetworkMethodDefinition.ParameterInfo p : member.getParameters()) {
                     info.addParameters(ParameterInfo.newBuilder()
                             .setName(p.getName()).setType(p.getType()).setIndex(p.getIndex())
                             .build());
@@ -159,11 +241,11 @@ public class NetScopeGrpcServiceImpl extends NetScopeServiceGrpc.NetScopeService
             public void onNext(InvokeRequest request) {
                 try {
                     Optional<NetworkMethodDefinition> methodOpt =
-                            scanner.findMethod(request.getBeanName(), request.getMethodName());
+                            scanner.findMethod(request.getBeanName(), request.getMemberName());
                     if (methodOpt.isEmpty()) {
                         responseObserver.onError(Status.NOT_FOUND
-                                .withDescription("Method not found: "
-                                        + request.getBeanName() + "." + request.getMethodName())
+                                .withDescription("Member not found: "
+                                        + request.getBeanName() + "." + request.getMemberName())
                                 .asRuntimeException());
                         return;
                     }

@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.List;
 
 public class NetScopeInvoker {
@@ -15,35 +16,64 @@ public class NetScopeInvoker {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * Invokes a method or reads a field.
+     * Invokes a method or reads a field value.
      * Returns JSON string of the result, or a status object for void methods.
      */
     public String invoke(NetworkMethodDefinition def, String argumentsJson) throws Exception {
-
-        // ── FIELD: just read and return the value ─────────────────────────────
         if (def.isField()) {
             return readField(def);
         }
-
-        // ── METHOD: invoke and return result ──────────────────────────────────
         return invokeMethod(def, argumentsJson);
+    }
+
+    /**
+     * Writes a value to an exposed field attribute.
+     * Rejects writes to final fields.
+     * Returns JSON of the previous value.
+     */
+    public String write(NetworkMethodDefinition def, String valueJson) throws Exception {
+        if (!def.isField()) {
+            throw new UnsupportedOperationException(
+                "write() is only supported for field attributes, not methods");
+        }
+        if (def.isFinal()) {
+            throw new IllegalStateException(
+                "Cannot write to final field: " + def.getBeanName() + "." + def.getMethodName());
+        }
+
+        Field field = def.getField();
+        field.setAccessible(true);
+
+        // Capture previous value before overwriting
+        Object target = def.isStatic() ? null : def.getBean();
+        Object previous = field.get(target);
+        String previousJson = previous == null ? "null" : objectMapper.writeValueAsString(previous);
+
+        // Deserialize the new value to the field's declared type
+        Object newValue;
+        if (valueJson == null || valueJson.equals("null")) {
+            newValue = null;
+        } else {
+            newValue = objectMapper.readValue(valueJson, field.getType());
+        }
+
+        field.set(target, newValue);
+        logger.debug("NetScope: wrote {}.{} = {}", def.getBeanName(), def.getMethodName(), valueJson);
+
+        return previousJson;
     }
 
     private String readField(NetworkMethodDefinition def) throws Exception {
         Field field = def.getField();
         field.setAccessible(true);
-        Object value = field.get(def.getBean());
+
+        // Static fields: pass null as the instance
+        Object target = def.isStatic() ? null : def.getBean();
+        Object value  = field.get(target);
 
         if (value == null) {
             return "null";
         }
-
-        // Primitives and strings — return as JSON primitive
-        if (value instanceof String || value instanceof Number || value instanceof Boolean) {
-            return objectMapper.writeValueAsString(value);
-        }
-
-        // Complex objects — serialize as JSON object
         return objectMapper.writeValueAsString(value);
     }
 
@@ -52,24 +82,17 @@ public class NetScopeInvoker {
         method.setAccessible(true);
 
         Object[] args = resolveArguments(method, argumentsJson);
-        Object result = method.invoke(def.getBean(), args);
 
-        // ── void method → return accepted status ─────────────────────────────
+        // Static methods: pass null as the instance
+        Object target = def.isStatic() ? null : def.getBean();
+        Object result = method.invoke(target, args);
+
         if (def.isVoidReturn()) {
             return "{\"status\":\"accepted\"}";
         }
-
-        // ── null result ───────────────────────────────────────────────────────
         if (result == null) {
             return "null";
         }
-
-        // ── primitives and strings — return as JSON primitive ─────────────────
-        if (result instanceof String || result instanceof Number || result instanceof Boolean) {
-            return objectMapper.writeValueAsString(result);
-        }
-
-        // ── complex object or list — serialize as JSON ────────────────────────
         return objectMapper.writeValueAsString(result);
     }
 
@@ -81,11 +104,8 @@ public class NetScopeInvoker {
         }
 
         if (argumentsJson == null || argumentsJson.isBlank() || argumentsJson.equals("[]")) {
-            if (paramTypes.length > 0) {
-                throw new IllegalArgumentException(
-                    "Method requires " + paramTypes.length + " argument(s) but none were provided");
-            }
-            return new Object[0];
+            throw new IllegalArgumentException(
+                "Method requires " + paramTypes.length + " argument(s) but none were provided");
         }
 
         List<Object> rawArgs = objectMapper.readValue(argumentsJson,

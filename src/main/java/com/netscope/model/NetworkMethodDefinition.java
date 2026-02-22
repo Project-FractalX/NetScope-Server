@@ -5,6 +5,7 @@ import com.netscope.annotation.AuthType;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.util.List;
 
@@ -28,6 +29,8 @@ public class NetworkMethodDefinition {
     private final String returnType;
     private final String description;
     private final SourceType sourceType;
+    private final boolean isStatic;
+    private final boolean isFinal;
 
     /** Constructor for METHOD */
     public NetworkMethodDefinition(Object bean, Method method,
@@ -44,6 +47,8 @@ public class NetworkMethodDefinition {
                         || method.getReturnType() == Void.class;
         this.returnType  = method.getReturnType().getSimpleName();
         this.description = description != null ? description : "";
+        this.isStatic    = Modifier.isStatic(method.getModifiers());
+        this.isFinal     = Modifier.isFinal(method.getModifiers());
 
         Parameter[] params = method.getParameters();
         this.parameters = new ParameterInfo[params.length];
@@ -67,6 +72,8 @@ public class NetworkMethodDefinition {
         this.voidReturn  = false;
         this.returnType  = field.getType().getSimpleName();
         this.description = description != null ? description : "";
+        this.isStatic    = Modifier.isStatic(field.getModifiers());
+        this.isFinal     = Modifier.isFinal(field.getModifiers());
         this.parameters  = new ParameterInfo[0];  // fields take no parameters
     }
 
@@ -85,6 +92,14 @@ public class NetworkMethodDefinition {
     public String getDescription()       { return description; }
     public SourceType getSourceType()    { return sourceType; }
     public boolean isField()             { return sourceType == SourceType.FIELD; }
+    public boolean isStatic()            { return isStatic; }
+    public boolean isFinal()             { return isFinal; }
+
+    /**
+     * A field attribute is writeable when it is not declared final.
+     * Methods are never writeable (invoke them instead).
+     */
+    public boolean isWriteable()         { return isField() && !isFinal; }
 
     /** Returns empty list — scopes removed, auth is controlled via AuthType */
     public List<String> getRequiredScopes() { return List.of(); }

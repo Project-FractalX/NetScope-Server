@@ -77,17 +77,17 @@ public class NetScopeScanner {
                 if (def != null) {
                     String key = def.getBeanName() + "." + def.getMethodName();
                     cache.put(key, def);
-                    logger.info("  [{}] {}.{} → {} | auth={}",
-                            def.isField() ? "field" : "method",
+                    logger.info("  [method] {}.{} → {} | auth={} | static={} | final={}",
                             def.getBeanName(), def.getMethodName(),
                             def.isSecured() ? "SECURED" : "PUBLIC",
-                            def.getAuthType());
+                            def.getAuthType(),
+                            def.isStatic(), def.isFinal());
                     count++;
                 }
             }
 
-            // ── Scan FIELDS ──────────────────────────────────────────────────
-            for (Field field : clazz.getDeclaredFields()) {
+            // ── Scan FIELDS (including inherited) ────────────────────────────
+            for (Field field : getAllFields(clazz)) {
                 NetworkMethodDefinition def = null;
 
                 NetworkPublic pub = field.getAnnotation(NetworkPublic.class);
@@ -107,10 +107,11 @@ public class NetScopeScanner {
                 if (def != null) {
                     String key = def.getBeanName() + "." + def.getMethodName();
                     cache.put(key, def);
-                    logger.info("  [field] {}.{} → {} | auth={}",
+                    logger.info("  [field]  {}.{} → {} | auth={} | static={} | final={} | writeable={}",
                             def.getBeanName(), def.getMethodName(),
                             def.isSecured() ? "SECURED" : "PUBLIC",
-                            def.getAuthType());
+                            def.getAuthType(),
+                            def.isStatic(), def.isFinal(), def.isWriteable());
                     count++;
                 }
             }
@@ -118,6 +119,20 @@ public class NetScopeScanner {
 
         scanned = true;
         logger.info("NetScope: scan complete — {} member(s) registered", count);
+    }
+
+    /**
+     * Collects all fields declared on clazz and its superclasses,
+     * stopping at Object. Superclass fields come after the subclass fields.
+     */
+    private List<Field> getAllFields(Class<?> clazz) {
+        List<Field> fields = new ArrayList<>();
+        Class<?> current = clazz;
+        while (current != null && current != Object.class) {
+            fields.addAll(Arrays.asList(current.getDeclaredFields()));
+            current = current.getSuperclass();
+        }
+        return fields;
     }
 
     /** Unwrap Spring proxies to get the real class */
