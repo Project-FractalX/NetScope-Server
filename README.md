@@ -1,6 +1,6 @@
-# FractalX NetScope Server — gRPC Remote Access for Spring Beans
+# NetScope Server — gRPC Remote Access for Spring Beans
 
-**NetScope** lets you expose any Spring bean method or field as a gRPC endpoint by adding a single annotation. Authentication (OAuth 2.0 JWT and/or API key) is handled automatically.
+**NetScope Server by FractalX** lets you expose any Spring bean method or field as a gRPC endpoint by adding a single annotation. Authentication (OAuth 2.0 JWT and/or API key) is handled automatically.
 
 ---
 
