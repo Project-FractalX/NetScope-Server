@@ -1,33 +1,56 @@
-# NetScope Server (gPRC)
+# NetScope — gRPC Remote Access for Spring Beans
 
-**NetScope** is a Spring Boot library that automatically exposes annotated bean **methods and fields** as gRPC endpoints with built-in OAuth 2.0 and API key authentication.
-
----
-
-## Features
-
-- Expose bean methods and fields over gRPC with a single annotation
-- Dual authentication: OAuth 2.0 JWT and/or API key per member
-- Read and write field attributes remotely via dedicated RPCs
-- Overloaded method support — overload inferred automatically from argument types; `parameter_types` only needed when inference is still ambiguous
-- Reactive return types — `Mono`, `Flux`, and `CompletableFuture` unwrapped automatically
-- Inherited field and method scanning across the full class hierarchy
-- Interface method scanning with automatic interface name aliases
-- Static and final field awareness
-- Bidirectional streaming support
-- Live introspection via `GetDocs` RPC
+**NetScope** lets you expose any Spring bean method or field as a gRPC endpoint by adding a single annotation. Authentication (OAuth 2.0 JWT and/or API key) is handled automatically.
 
 ---
 
-## Installation
+## Table of Contents
 
-### 1. Build and install locally
+- [How it works](#how-it-works)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [Annotating your beans](#annotating-your-beans)
+- [Configuration](#configuration)
+- [Calling the service](#calling-the-service)
+  - [grpcurl](#grpcurl)
+  - [Java client](#java-client)
+  - [Python client](#python-client)
+  - [Bidirectional streaming](#bidirectional-streaming)
+- [Passing arguments](#passing-arguments)
+  - [Primitives](#primitives)
+  - [Objects (POJOs)](#objects-pojos)
+  - [Overloaded methods](#overloaded-methods)
+- [Authentication](#authentication)
+- [Reading and writing fields](#reading-and-writing-fields)
+- [Live introspection (GetDocs)](#live-introspection-getdocs)
+- [gRPC status codes](#grpc-status-codes)
+- [OAuth 2.0 provider examples](#oauth-20-provider-examples)
+- [Troubleshooting](#troubleshooting)
+- [Security best practices](#security-best-practices)
 
-```bash
-mvn clean install
+---
+
+## How it works
+
+```
+Your Spring bean                  NetScope                    gRPC caller
+─────────────────                 ────────                    ───────────
+@NetworkPublic                    scans beans on startup      grpcurl / Java / Python
+public String getVersion()   →    registers endpoint      →   InvokeMethod("AppService", "getVersion")
+                                  validates auth              ← "2.0.0"
 ```
 
-### 2. Add dependency
+Three steps to use it:
+
+1. **Annotate** — add `@NetworkPublic` or `@NetworkSecured` to the methods/fields you want to expose
+2. **Configure** — set a port and (optionally) your auth provider in `application.yml`
+3. **Call** — use any gRPC client, grpcurl, or the generated stub to invoke your beans remotely
+
+---
+
+## Quick Start
+
+### 1. Add the dependency
 
 ```xml
 <dependency>
@@ -37,36 +60,154 @@ mvn clean install
 </dependency>
 ```
 
----
+### 2. Annotate a bean
 
-## Configuration
+```java
+@Service
+public class AppService {
+
+    @NetworkPublic(description = "Current version")
+    public String getVersion() {
+        return "2.0.0";
+    }
+
+    @NetworkSecured(auth = AuthType.API_KEY, description = "Restart the service")
+    public String restart() {
+        // ...
+        return "restarted";
+    }
+}
+```
+
+### 3. Set a port
 
 ```yaml
 netscope:
   grpc:
-    enabled: true
     port: 9090
-    maxInboundMessageSize: 4194304        # 4 MB
-    maxConcurrentCallsPerConnection: 100
-    keepAliveTime: 300                    # seconds
-    keepAliveTimeout: 20
-    permitKeepAliveWithoutCalls: false
-    maxConnectionIdle: 0                  # 0 = infinite
-    maxConnectionAge: 0
-    enableReflection: true
-
-  security:
-    enabled: true
-    issuerUri: https://auth.example.com
-    jwkSetUri: https://auth.example.com/.well-known/jwks.json
-    audiences:
-      - https://api.example.com
-    tokenCacheDuration: 300               # seconds
-    clockSkew: 60
-    apiKey: your-secret-api-key
 ```
 
-### Minimal configuration
+### 4. Call it
+
+```bash
+grpcurl -plaintext \
+  -d '{"bean_name": "AppService", "member_name": "getVersion"}' \
+  localhost:9090 netscope.NetScopeService/InvokeMethod
+```
+
+```json
+{ "result": "2.0.0" }
+```
+
+---
+
+## Installation
+
+Build and install the library to your local Maven repository:
+
+```bash
+mvn clean install
+```
+
+Then add the dependency shown in the Quick Start above.
+
+---
+
+## Annotating your beans
+
+### `@NetworkPublic` — no authentication required
+
+```java
+@Service
+public class AppService {
+
+    @NetworkPublic(description = "Current app version")
+    public String getVersion() {
+        return "2.0.0";
+    }
+
+    @NetworkPublic(description = "Feature flag — readable and writable remotely")
+    private boolean maintenanceMode = false;
+
+    @NetworkPublic(description = "Build ID — readable only because it is final")
+    public static final String BUILD_ID = "abc123";
+}
+```
+
+### `@NetworkSecured` — requires a credential
+
+The `auth` parameter controls which credential type is accepted:
+
+| `auth` value | Accepted credential |
+|---|---|
+| `AuthType.OAUTH` | OAuth 2.0 JWT Bearer token |
+| `AuthType.API_KEY` | API key |
+| `AuthType.BOTH` | Either OAuth or API key |
+
+```java
+@Service
+public class CustomerService {
+
+    @NetworkSecured(auth = AuthType.OAUTH, description = "Look up a customer")
+    public Customer getCustomer(String customerId) { ... }
+
+    @NetworkSecured(auth = AuthType.API_KEY, description = "Delete a customer")
+    public void deleteCustomer(String customerId) { ... }
+
+    @NetworkSecured(auth = AuthType.BOTH, description = "Request counter — readable and writable")
+    private int requestCount = 0;
+}
+```
+
+### What can be annotated
+
+| Target | Behaviour |
+|---|---|
+| Method | Callable via `InvokeMethod` |
+| Overloaded methods | All overloads registered; correct one is chosen automatically from argument types |
+| `Mono` / `Flux` / `CompletableFuture` return | Unwrapped automatically before the result is returned |
+| Non-final field | Readable via `InvokeMethod`, writable via `SetAttribute` |
+| Final field | Readable via `InvokeMethod` only — write attempts are rejected |
+| Static field or method | Supported |
+| Inherited field or method | Scanned automatically up the full superclass chain |
+| Interface method | Annotate on the interface — implementing classes don't need to repeat it |
+
+### Interface name aliases
+
+If your bean implements a user-defined interface, you can use **either** the concrete class name or the interface name as `bean_name`:
+
+```java
+public interface CustomerService {
+    @NetworkPublic
+    CustomerResDTO getCustomers();
+}
+
+@Service
+public class CustomerServiceImpl implements CustomerService {
+    // No need to repeat @NetworkPublic here
+    public CustomerResDTO getCustomers() { ... }
+}
+```
+
+```bash
+# Both work:
+"bean_name": "CustomerServiceImpl"
+"bean_name": "CustomerService"
+```
+
+Startup log confirms the alias was registered:
+```
+[method] CustomerServiceImpl.getCustomers → PUBLIC
+[alias]  CustomerService → CustomerServiceImpl (1 member)
+```
+
+> **Note:** `GetDocs` returns members under the concrete class name only. Standard Java/Spring interfaces (`Serializable`, `ApplicationContextAware`, etc.) are never aliased.
+
+---
+
+## Configuration
+
+### Minimal (OAuth + API key)
 
 ```yaml
 netscope:
@@ -80,218 +221,75 @@ netscope:
     apiKey: your-api-key
 ```
 
----
+### Full reference
 
-## Annotations
+```yaml
+netscope:
+  grpc:
+    enabled: true
+    port: 9090
+    maxInboundMessageSize: 4194304        # bytes (default 4 MB)
+    maxConcurrentCallsPerConnection: 100
+    keepAliveTime: 300                    # seconds
+    keepAliveTimeout: 20
+    permitKeepAliveWithoutCalls: false
+    maxConnectionIdle: 0                  # 0 = unlimited
+    maxConnectionAge: 0
+    enableReflection: true
 
-### `@NetworkPublic`
-
-No authentication required. Usable on methods and fields.
-
-```java
-@NetworkPublic(description = "Current app version")
-public String getVersion() {
-    return "2.0.0";
-}
-
-@NetworkPublic(description = "Build identifier")
-public static final String BUILD_ID = "abc123";   // readable, not writable (final)
-
-@NetworkPublic(description = "Feature flag")
-private boolean maintenanceMode = false;           // readable and writable
+  security:
+    enabled: true
+    issuerUri: https://auth.example.com
+    jwkSetUri: https://auth.example.com/.well-known/jwks.json
+    audiences:
+      - https://api.example.com
+    tokenCacheDuration: 300               # seconds to cache validated tokens
+    clockSkew: 60                         # seconds of allowed clock drift
+    apiKey: your-secret-api-key
 ```
 
-### `@NetworkSecured`
+---
 
-Requires authentication. The `auth` parameter is mandatory and selects which credential type is accepted.
+## Calling the service
 
-| `auth` value | Accepted credential |
+All four RPCs share the same service:
+
+| RPC | Use for |
 |---|---|
-| `AuthType.OAUTH` | OAuth 2.0 JWT Bearer token only |
-| `AuthType.API_KEY` | API key only |
-| `AuthType.BOTH` | Either OAuth or API key |
-
-```java
-@NetworkSecured(auth = AuthType.OAUTH, description = "Get customer by ID")
-public Customer getCustomer(String customerId) { ... }
-
-@NetworkSecured(auth = AuthType.API_KEY, description = "Delete customer")
-public void deleteCustomer(String customerId) { ... }  // returns {"status":"accepted"}
-
-@NetworkSecured(auth = AuthType.BOTH, description = "Internal request counter")
-private int requestCount = 0;                          // readable and writable
-
-@NetworkSecured(auth = AuthType.OAUTH, description = "Secret token")
-private static final String SECRET = "tok_abc";        // readable, not writable (final)
-```
-
-### Annotating fields vs methods
-
-| Annotation target | Behaviour |
-|---|---|
-| Method | Callable via `InvokeMethod` RPC |
-| Overloaded method | All overloads registered; overload inferred automatically from argument types; `parameter_types` only needed when inference is still ambiguous (e.g. `int` vs `long`) |
-| Reactive method (`Mono`/`Flux`/`CompletableFuture`) | Return value unwrapped automatically before serialization |
-| Non-final field | Readable via `InvokeMethod`, writable via `SetAttribute` |
-| Final field | Readable via `InvokeMethod` only — writes are rejected |
-| Static field/method | Supported; no bean instance required |
-| Inherited field | Scanned automatically up the full superclass chain |
-| Inherited method | Scanned automatically up the full superclass chain; subclass override takes precedence |
-| Interface method | Annotation on the interface is picked up automatically — the implementing class does not need to repeat it |
-
-### Interface name aliases
-
-When a bean implements a user-defined interface, NetScope automatically registers an alias so you can use **either** the concrete class name or the interface name as `bean_name`:
-
-```java
-public interface CustomerService {
-    @NetworkPublic
-    CustomerResDTO getCustomers();
-}
-
-@Service
-public class CustomerServiceImpl implements CustomerService {
-    // no need to repeat @NetworkPublic on the override
-    public CustomerResDTO getCustomers() { ... }
-}
-```
-
-```bash
-# Both of these work:
-"bean_name": "CustomerServiceImpl"   # concrete class name
-"bean_name": "CustomerService"       # interface name alias
-```
-
-Startup log confirms the alias was registered:
-```
-[method] CustomerServiceImpl.getCustomers → PUBLIC
-[alias]  CustomerService → CustomerServiceImpl (1 member(s))
-```
-
-**Notes:**
-- Aliases are lookup-only — `GetDocs` returns members under the concrete class name only, without duplicates
-- Standard Java and Spring interfaces (`Serializable`, `ApplicationContextAware`, etc.) are never aliased
-- If two beans implement the same interface, the first one scanned claims the alias
-
----
-
-## gRPC API
-
-### Protocol Buffer definition
-
-```protobuf
-enum MemberKind {
-  METHOD = 0;
-  FIELD  = 1;
-}
-
-// Invoke a method or read a field value
-message InvokeRequest {
-  string bean_name                    = 1;
-  string member_name                  = 2;
-  google.protobuf.ListValue arguments = 3;  // empty for fields and no-arg methods
-  repeated string parameter_types     = 4;
-}
-
-message InvokeResponse {
-  google.protobuf.Value result = 1;  // any JSON type: object, array, primitive, null
-}
-
-// Write a value to a non-final field
-message SetAttributeRequest {
-  string bean_name      = 1;
-  string attribute_name = 2;
-  google.protobuf.Value value = 3;
-}
-
-message SetAttributeResponse {
-  google.protobuf.Value previous_value = 1;  // value before the write
-}
-
-// Introspect all exposed members
-message MethodInfo {
-  string bean_name                  = 1;
-  string member_name                = 2;
-  bool   secured                    = 3;
-  string return_type                = 4;
-  repeated ParameterInfo parameters = 5;
-  repeated string required_scopes   = 6;
-  string description                = 7;
-  MemberKind kind                   = 8;  // METHOD or FIELD
-  bool writeable                    = 9;  // true for non-final fields
-  bool is_static                    = 10;
-  bool is_final                     = 11;
-}
-
-service NetScopeService {
-  rpc InvokeMethod       (InvokeRequest)           returns (InvokeResponse);
-  rpc SetAttribute       (SetAttributeRequest)      returns (SetAttributeResponse);
-  rpc GetDocs            (DocsRequest)              returns (DocsResponse);
-  rpc InvokeMethodStream (stream InvokeRequest)     returns (stream InvokeResponse);
-}
-```
-
-### Authentication headers
-
-Credentials are passed as gRPC metadata headers — never in the request message body.
-
-| Header | Value | Used for |
-|---|---|---|
-| `authorization` | `Bearer <jwt>` | OAuth 2.0 token |
-| `x-api-key` | `<key>` | API key |
-
----
-
-## Usage examples
+| `InvokeMethod` | Call a method or read a field |
+| `SetAttribute` | Write a value to a non-final field |
+| `GetDocs` | List all exposed members and their signatures |
+| `InvokeMethodStream` | Bidirectional streaming — many requests, many responses |
 
 ### grpcurl
 
-```bash
-# Read a public field
-grpcurl -plaintext -d '{
-  "bean_name": "AppService",
-  "member_name": "appVersion"
-}' localhost:9090 netscope.NetScopeService/InvokeMethod
+> Arguments are plain JSON. Strings, numbers, booleans, objects, and arrays are written naturally — no type wrappers needed.
 
-# Invoke a secured method (OAuth)
+```bash
+# Call a public method
+grpcurl -plaintext \
+  -d '{"bean_name": "AppService", "member_name": "getVersion"}' \
+  localhost:9090 netscope.NetScopeService/InvokeMethod
+
+# Call a method with arguments (OAuth)
 grpcurl -plaintext \
   -H 'authorization: Bearer eyJhbGci...' \
   -d '{
     "bean_name": "CustomerService",
     "member_name": "getCustomer",
-    "arguments": [{"string_value": "CUST001"}]
+    "arguments": ["CUST001"]
   }' localhost:9090 netscope.NetScopeService/InvokeMethod
 
-# Write a field value (API key auth)
-grpcurl -plaintext \
-  -H 'x-api-key: your-api-key' \
-  -d '{
-    "bean_name": "AppService",
-    "attribute_name": "maintenanceMode",
-    "value": {"bool_value": true}
-  }' localhost:9090 netscope.NetScopeService/SetAttribute
-
-# Invoke an overloaded method — type inferred automatically from argument kind
-# (string_value → String, number_value → numeric, bool_value → boolean, struct_value → POJO/Map, list_value → List/array)
+# Call a method with multiple arguments
 grpcurl -plaintext \
   -H 'authorization: Bearer eyJhbGci...' \
   -d '{
     "bean_name": "OrderService",
-    "member_name": "process",
-    "arguments": [{"string_value": "ORD001"}]
+    "member_name": "placeOrder",
+    "arguments": ["CUST001", 99.99, true]
   }' localhost:9090 netscope.NetScopeService/InvokeMethod
 
-# Supply parameter_types only when inference is ambiguous (e.g. int vs long, both number_value)
-grpcurl -plaintext \
-  -H 'authorization: Bearer eyJhbGci...' \
-  -d '{
-    "bean_name": "OrderService",
-    "member_name": "process",
-    "parameter_types": ["int"],
-    "arguments": [{"number_value": 42}]
-  }' localhost:9090 netscope.NetScopeService/InvokeMethod
-
-# Introspect all exposed members
+# Read all exposed members
 grpcurl -plaintext -d '{}' localhost:9090 netscope.NetScopeService/GetDocs
 ```
 
@@ -306,41 +304,22 @@ ManagedChannel channel = ManagedChannelBuilder
 NetScopeServiceGrpc.NetScopeServiceBlockingStub stub =
     NetScopeServiceGrpc.newBlockingStub(channel);
 
-// Add OAuth token as metadata
+// Attach an OAuth token
 Metadata headers = new Metadata();
 headers.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
             "Bearer " + accessToken);
 stub = MetadataUtils.attachHeaders(stub, headers);
 
-// Invoke a method
-InvokeRequest methodRequest = InvokeRequest.newBuilder()
+// Call a method
+InvokeRequest request = InvokeRequest.newBuilder()
     .setBeanName("CustomerService")
     .setMemberName("getCustomer")
     .setArguments(ListValue.newBuilder()
         .addValues(Value.newBuilder().setStringValue("CUST001")))
     .build();
 
-InvokeResponse response = stub.invokeMethod(methodRequest);
+InvokeResponse response = stub.invokeMethod(request);
 System.out.println(response.getResult());
-
-// Read a field attribute
-InvokeRequest fieldRead = InvokeRequest.newBuilder()
-    .setBeanName("AppService")
-    .setMemberName("maintenanceMode")
-    .build();
-
-InvokeResponse fieldResponse = stub.invokeMethod(fieldRead);
-System.out.println(fieldResponse.getResult());  // e.g. false
-
-// Write a field attribute
-SetAttributeRequest writeRequest = SetAttributeRequest.newBuilder()
-    .setBeanName("AppService")
-    .setAttributeName("maintenanceMode")
-    .setValue(Value.newBuilder().setBoolValue(true))
-    .build();
-
-SetAttributeResponse writeResponse = stub.setAttribute(writeRequest);
-System.out.println("Previous: " + writeResponse.getPreviousValue());  // false
 
 channel.shutdown();
 ```
@@ -350,42 +329,30 @@ channel.shutdown();
 ```python
 import grpc
 from google.protobuf import struct_pb2
-from netscope_pb2 import InvokeRequest, SetAttributeRequest
+from netscope_pb2 import InvokeRequest
 from netscope_pb2_grpc import NetScopeServiceStub
 
 channel = grpc.insecure_channel('localhost:9090')
 stub = NetScopeServiceStub(channel)
 
-# OAuth metadata
 metadata = [('authorization', f'Bearer {access_token}')]
 
-# Invoke a method
-request = InvokeRequest(
-    bean_name="CustomerService",
-    member_name="getCustomer"
-)
+request = InvokeRequest(bean_name="CustomerService", member_name="getCustomer")
 request.arguments.values.append(struct_pb2.Value(string_value="CUST001"))
+
 response = stub.InvokeMethod(request, metadata=metadata)
 print(response.result)
-
-# Write a field
-write = SetAttributeRequest(
-    bean_name="AppService",
-    attribute_name="maintenanceMode",
-    value=struct_pb2.Value(bool_value=True)
-)
-wr = stub.SetAttribute(write, metadata=[('x-api-key', 'your-api-key')])
-print("Previous:", wr.previous_value)
 ```
 
-### Streaming
+### Bidirectional streaming
+
+Send multiple requests over a single connection and receive responses as they complete.
 
 ```java
-NetScopeServiceGrpc.NetScopeServiceStub asyncStub =
-    NetScopeServiceGrpc.newStub(channel);
+NetScopeServiceGrpc.NetScopeServiceStub asyncStub = NetScopeServiceGrpc.newStub(channel);
 
 StreamObserver<InvokeRequest> requestStream =
-    asyncStub.invokeMethodStream(new StreamObserver<InvokeResponse>() {
+    asyncStub.invokeMethodStream(new StreamObserver<>() {
         @Override public void onNext(InvokeResponse r)  { System.out.println(r.getResult()); }
         @Override public void onError(Throwable t)      { t.printStackTrace(); }
         @Override public void onCompleted()              { System.out.println("done"); }
@@ -402,11 +369,34 @@ for (int i = 0; i < 10; i++) {
 requestStream.onCompleted();
 ```
 
-### Object arguments (POJOs)
+---
 
-Pass a Java object by encoding it as a `struct_value`. Jackson deserializes the struct fields into the target class automatically — field names must match the Java class fields (or `@JsonProperty` aliases).
+## Passing arguments
 
-**grpcurl**
+### Primitives
+
+Arguments are a JSON array. Each element maps to a method parameter in order.
+
+```bash
+# String
+"arguments": ["CUST001"]
+
+# Number
+"arguments": [42]
+
+# Boolean
+"arguments": [true]
+
+# Multiple mixed arguments
+"arguments": ["CUST001", 99.99, true]
+
+# Null
+"arguments": [null]
+```
+
+### Objects (POJOs)
+
+Pass a Java object as a JSON object. NetScope deserializes it into the target class automatically — field names must match the Java class fields (or `@JsonProperty` aliases).
 
 ```bash
 grpcurl -plaintext \
@@ -414,23 +404,15 @@ grpcurl -plaintext \
   -d '{
     "bean_name": "OrderService",
     "member_name": "createOrder",
-    "arguments": [{
-      "struct_value": {
-        "fields": {
-          "customerId": {"string_value": "CUST001"},
-          "amount":     {"number_value": 99.99},
-          "express":    {"bool_value": true}
-        }
-      }
-    }]
+    "arguments": [
+      {"customerId": "CUST001", "amount": 99.99, "express": true}
+    ]
   }' localhost:9090 netscope.NetScopeService/InvokeMethod
 ```
 
-**Java client**
+**Java client:**
 
 ```java
-import com.google.protobuf.Struct;
-
 Struct orderStruct = Struct.newBuilder()
     .putFields("customerId", Value.newBuilder().setStringValue("CUST001").build())
     .putFields("amount",     Value.newBuilder().setNumberValue(99.99).build())
@@ -445,7 +427,7 @@ InvokeRequest request = InvokeRequest.newBuilder()
     .build();
 ```
 
-**Python client**
+**Python client:**
 
 ```python
 order = struct_pb2.Struct()
@@ -455,11 +437,116 @@ request = InvokeRequest(bean_name="OrderService", member_name="createOrder")
 request.arguments.values.append(struct_pb2.Value(struct_value=order))
 ```
 
-**Notes**
-- **Nested objects** — use a nested `struct_value` inside the parent struct's fields
-- **List of objects** — use `list_value` whose items are each a `struct_value`
-- **Null argument** — send `{"null_value": 0}`
-- Overload inference recognises `struct_value` as compatible with POJO and `Map` parameters, so `parameter_types` is rarely needed for object arguments
+**Tips for complex types:**
+- **Nested object** — use a nested JSON object inside the parent: `{"address": {"street": "123 Main St", "city": "NY"}}`
+- **List of objects** — use a JSON array: `[{"id": 1}, {"id": 2}]`
+
+### Overloaded methods
+
+NetScope automatically picks the right overload by matching argument types. Most of the time you don't need to do anything extra.
+
+```bash
+# NetScope infers: process(String) because the argument is a string
+"member_name": "process",
+"arguments": ["ORD001"]
+```
+
+**When automatic inference isn't enough** — if two overloads are equally compatible (e.g. `process(int)` vs `process(long)`, both numeric), add `parameter_types`:
+
+```bash
+grpcurl -plaintext \
+  -H 'authorization: Bearer eyJhbGci...' \
+  -d '{
+    "bean_name": "OrderService",
+    "member_name": "process",
+    "parameter_types": ["int"],
+    "arguments": [42]
+  }' localhost:9090 netscope.NetScopeService/InvokeMethod
+```
+
+Use the exact type names shown by `GetDocs` (`ParameterInfo.type`) for `parameter_types`.
+
+---
+
+## Authentication
+
+Credentials go in **gRPC metadata headers**, not in the request body.
+
+| Header | Example value | Used for |
+|---|---|---|
+| `authorization` | `Bearer eyJhbGci...` | OAuth 2.0 JWT |
+| `x-api-key` | `your-api-key` | API key |
+
+```bash
+# OAuth
+grpcurl -plaintext -H 'authorization: Bearer eyJhbGci...' ...
+
+# API key
+grpcurl -plaintext -H 'x-api-key: your-api-key' ...
+```
+
+---
+
+## Reading and writing fields
+
+### Read a field
+
+Use `InvokeMethod` the same way you'd call a method — just omit `arguments`:
+
+```bash
+grpcurl -plaintext \
+  -d '{"bean_name": "AppService", "member_name": "maintenanceMode"}' \
+  localhost:9090 netscope.NetScopeService/InvokeMethod
+```
+
+```json
+{ "result": false }
+```
+
+### Write a field
+
+Use `SetAttribute`. The response includes the previous value.
+
+```bash
+grpcurl -plaintext \
+  -H 'x-api-key: your-api-key' \
+  -d '{
+    "bean_name": "AppService",
+    "attribute_name": "maintenanceMode",
+    "value": true
+  }' localhost:9090 netscope.NetScopeService/SetAttribute
+```
+
+```json
+{ "previousValue": false }
+```
+
+> `final` fields are read-only. `SetAttribute` on a final field returns `FAILED_PRECONDITION`.
+
+---
+
+## Live introspection (GetDocs)
+
+`GetDocs` returns every exposed member with its full signature:
+
+```bash
+grpcurl -plaintext -d '{}' localhost:9090 netscope.NetScopeService/GetDocs
+```
+
+Each entry includes:
+
+| Field | Meaning |
+|---|---|
+| `bean_name` | Spring bean name to use in requests |
+| `member_name` | Method or field name |
+| `kind` | `METHOD` or `FIELD` |
+| `return_type` | Java return type |
+| `parameters` | Parameter names, types, and positions |
+| `secured` | `true` if authentication is required |
+| `writeable` | `true` for non-final fields |
+| `is_static` | `true` for static members |
+| `is_final` | `true` for final fields |
+| `description` | Text from the annotation's `description` |
 
 ---
 
@@ -467,12 +554,12 @@ request.arguments.values.append(struct_pb2.Value(struct_value=order))
 
 | Status | When |
 |---|---|
-| `OK` | Successful invocation or write |
-| `NOT_FOUND` | Bean or member name not found |
-| `UNAUTHENTICATED` | Missing or invalid credentials |
-| `PERMISSION_DENIED` | Wrong credential type for the member |
+| `OK` | Success |
+| `NOT_FOUND` | Bean or member name not found in the registry |
+| `UNAUTHENTICATED` | Missing or invalid credential |
+| `PERMISSION_DENIED` | Wrong credential type (e.g. API key sent to an OAuth-only method) |
 | `FAILED_PRECONDITION` | Attempt to write a `final` field |
-| `INVALID_ARGUMENT` | Wrong number of arguments, calling `SetAttribute` on a method, or ambiguous overloaded method call missing `parameter_types` |
+| `INVALID_ARGUMENT` | Wrong number of arguments; `SetAttribute` called on a method; ambiguous overload that couldn't be resolved automatically |
 | `INTERNAL` | Unexpected server error |
 
 ---
@@ -514,52 +601,51 @@ netscope:
 
 ---
 
-## Monitoring and logging
+## Troubleshooting
+
+### `NOT_FOUND: Member not found`
+
+- Bean name and member name are **case-sensitive**
+- The method or field must have `@NetworkPublic` or `@NetworkSecured`
+- The bean must be a Spring-managed component (`@Service`, `@Component`, etc.)
+- You can use either the concrete class name (`CustomerServiceImpl`) or the interface name (`CustomerService`) as `bean_name` — check the startup log for registered aliases
+
+### `UNAUTHENTICATED`
+
+- Confirm the `authorization` or `x-api-key` header is present in the request **metadata** (not the body)
+- Check that the JWT is not expired and its issuer/audience match your `application.yml`
+
+### `FAILED_PRECONDITION: Attribute is final`
+
+- `SetAttribute` cannot write to `final` fields; use `InvokeMethod` to read them
+
+### `INVALID_ARGUMENT` on `SetAttribute`
+
+- You used a method name — `SetAttribute` is for fields only; use `InvokeMethod` for methods
+
+### `INVALID_ARGUMENT: Ambiguous method`
+
+- Multiple overloads matched and automatic inference couldn't pick one (e.g. `process(int)` vs `process(long)` — both accept a numeric argument)
+- Add `parameter_types` with the exact type name from `GetDocs`: `"parameter_types": ["int"]`
+
+### Enable debug logging
 
 ```yaml
 logging:
   level:
     com.netscope: DEBUG
     io.grpc: INFO
-    io.grpc.netty.shaded.io.netty.handler.codec.http2: ERROR
 ```
-
----
-
-## Troubleshooting
-
-### `NOT_FOUND: Member not found`
-- Bean name and member name are case-sensitive
-- The field or method must have `@NetworkPublic` or `@NetworkSecured`
-- The bean must be a Spring-managed component (`@Service`, `@Component`, etc.)
-- You can use either the concrete class name (`CustomerServiceImpl`) or any user-defined interface name (`CustomerService`) as `bean_name`
-
-### `UNAUTHENTICATED`
-- Check that the `authorization` or `x-api-key` header is present in the request metadata
-- Verify the JWT is not expired and its issuer/audience match configuration
-
-### `FAILED_PRECONDITION: Attribute is final`
-- `SetAttribute` cannot write to `final` fields; use `InvokeMethod` to read them
-
-### `INVALID_ARGUMENT` on `SetAttribute`
-- You called `SetAttribute` with a method name — use `InvokeMethod` for methods
-
-### `INVALID_ARGUMENT: Ambiguous method`
-- The method name matches multiple overloads and the argument types could not disambiguate them automatically
-- NetScope first tries to infer the correct overload from the protobuf `Value` kinds of the supplied arguments (`string_value` → String, `number_value` → numeric, `bool_value` → boolean, etc.)
-- Inference fails only when two or more overloads are equally compatible (e.g. `process(int)` vs `process(long)` — both accept `number_value`)
-- Fix: add `parameter_types` to the request using the exact type names shown in `GetDocs` (`ParameterInfo.type`)
-- Example error: `Ambiguous method 'process' on OrderService — specify parameter_types to disambiguate. Available: [process(int index), process(long index)]`
 
 ---
 
 ## Security best practices
 
 - Always enable TLS in production
-- Use short-lived JWT tokens (15–60 minutes) and implement refresh on the client
-- Prefer `AuthType.OAUTH` for user-facing endpoints and `AuthType.API_KEY` for service-to-service
-- Never annotate fields that hold credentials or internal secrets as `@NetworkPublic`
-- Use `final` to mark attributes that must never be remotely modified
+- Use short-lived JWT tokens (15–60 minutes) with token refresh on the client
+- Prefer `AuthType.OAUTH` for user-facing endpoints and `AuthType.API_KEY` for service-to-service calls
+- Never annotate fields that hold credentials or secrets with `@NetworkPublic`
+- Mark attributes that must not be modified remotely as `final`
 
 ---
 
@@ -569,5 +655,5 @@ Apache License 2.0
 
 ## Authors
 
-- **Sathnindu Kottage** - [@sathninduk](https://github.com/sathninduk)
-- **FractalX Team** - [https://github.com/project-FractalX](https://github.com/project-FractalX)
+- **Sathnindu Kottage** — [@sathninduk](https://github.com/sathninduk)
+- **FractalX Team** — [https://github.com/project-FractalX](https://github.com/project-FractalX)
