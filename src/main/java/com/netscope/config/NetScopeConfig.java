@@ -54,7 +54,7 @@ public class NetScopeConfig {
     // ── Security ──────────────────────────────────────────────────────────────
 
     public static class SecurityConfig {
-        private boolean enabled = false;
+        private boolean enabled = true;
 
         // ── OAuth 2.0 ──────────────────────────────────────────────────────
         private OAuthConfig oauth = new OAuthConfig();
@@ -95,17 +95,13 @@ public class NetScopeConfig {
         /** API Key settings */
         public static class ApiKeyConfig {
             private boolean enabled = false;
-            /** List of valid API keys */
+            /** List of valid API keys — multiple keys supported for rotation */
             private List<String> keys = new ArrayList<>();
-            /** Optional: header name to check (for future HTTP bridge use) */
-            private String headerName = "x-api-key";
 
             public boolean isEnabled() { return enabled; }
             public void setEnabled(boolean v) { this.enabled = v; }
             public List<String> getKeys() { return keys; }
             public void setKeys(List<String> v) { this.keys = v; }
-            public String getHeaderName() { return headerName; }
-            public void setHeaderName(String v) { this.headerName = v; }
         }
     }
 

@@ -271,6 +271,14 @@ netscope:
 
 Both `oauth.enabled` and `api-key.enabled` must be set to `true` explicitly — neither is on by default.
 
+Security enforcement (`security.enabled`) defaults to `true`. To disable all authentication for local development, set it to `false`:
+
+```yaml
+netscope:
+  security:
+    enabled: false   # dev mode — disables auth checks for all @NetworkSecured endpoints
+```
+
 ### Full reference
 
 ```yaml
@@ -301,7 +309,6 @@ netscope:
       keys:
         - your-primary-api-key
         - your-secondary-api-key          # multiple keys supported for rotation
-      headerName: x-api-key              # header clients send the key in (default: x-api-key)
 ```
 
 ---

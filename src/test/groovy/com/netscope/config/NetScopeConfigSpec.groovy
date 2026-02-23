@@ -88,18 +88,18 @@ class NetScopeConfigSpec extends Specification {
 
     // ── SecurityConfig defaults ───────────────────────────────────────────────
 
-    def "SecurityConfig default: enabled = false"() {
+    def "SecurityConfig default: enabled = true"() {
         expect:
-        !new NetScopeConfig().getSecurity().isEnabled()
+        new NetScopeConfig().getSecurity().isEnabled()
     }
 
     def "SecurityConfig setter works"() {
         given:
         def sec = new NetScopeConfig().getSecurity()
         when:
-        sec.setEnabled(true)
+        sec.setEnabled(false)
         then:
-        sec.isEnabled()
+        !sec.isEnabled()
     }
 
     // ── OAuthConfig defaults ──────────────────────────────────────────────────
@@ -176,22 +176,15 @@ class NetScopeConfigSpec extends Specification {
         new NetScopeConfig().getSecurity().getApiKey().getKeys().isEmpty()
     }
 
-    def "ApiKeyConfig default: headerName = 'x-api-key'"() {
-        expect:
-        new NetScopeConfig().getSecurity().getApiKey().getHeaderName() == "x-api-key"
-    }
-
     def "ApiKeyConfig setters work"() {
         given:
         def apiKey = new NetScopeConfig().getSecurity().getApiKey()
         when:
         apiKey.setEnabled(true)
         apiKey.setKeys(["key1", "key2"])
-        apiKey.setHeaderName("x-custom-key")
         then:
         apiKey.isEnabled()
         apiKey.getKeys() == ["key1", "key2"]
-        apiKey.getHeaderName() == "x-custom-key"
     }
 
     def "SecurityConfig.setApiKey replaces ApiKeyConfig"() {
