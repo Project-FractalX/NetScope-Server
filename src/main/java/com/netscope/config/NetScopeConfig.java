@@ -11,11 +11,9 @@ public class NetScopeConfig {
 
     private final GrpcConfig grpc = new GrpcConfig();
     private final SecurityConfig security = new SecurityConfig();
-    private final DiscoveryConfig discovery = new DiscoveryConfig();
 
     public GrpcConfig getGrpc() { return grpc; }
     public SecurityConfig getSecurity() { return security; }
-    public DiscoveryConfig getDiscovery() { return discovery; }
 
     // ── gRPC ─────────────────────────────────────────────────────────────────
 
@@ -111,21 +109,4 @@ public class NetScopeConfig {
         }
     }
 
-    // ── Discovery ─────────────────────────────────────────────────────────────
-
-    public static class DiscoveryConfig {
-        private List<String> basePackages = new ArrayList<>();
-        private boolean enabled = true;
-        private boolean includeParameterNames = true;
-        private boolean includeReturnTypes = true;
-
-        public List<String> getBasePackages() { return basePackages; }
-        public void setBasePackages(List<String> v) { this.basePackages = v; }
-        public boolean isEnabled() { return enabled; }
-        public void setEnabled(boolean v) { this.enabled = v; }
-        public boolean isIncludeParameterNames() { return includeParameterNames; }
-        public void setIncludeParameterNames(boolean v) { this.includeParameterNames = v; }
-        public boolean isIncludeReturnTypes() { return includeReturnTypes; }
-        public void setIncludeReturnTypes(boolean v) { this.includeReturnTypes = v; }
-    }
 }

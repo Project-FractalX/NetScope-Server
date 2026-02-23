@@ -1,12 +1,13 @@
 package com.netscope.annotation;
 
 /**
- * Authentication type for @NetworkSecured methods.
+ * Authentication type for {@code @NetworkSecured} methods.
  *
- * Usage:
- *   @NetworkSecured(auth = AuthType.OAUTH)
- *   @NetworkSecured(auth = AuthType.API_KEY)
- *   @NetworkSecured(auth = AuthType.BOTH)
+ * <pre>
+ * {@code @NetworkSecured(auth = AuthType.OAUTH)}
+ * {@code @NetworkSecured(auth = AuthType.API_KEY)}
+ * {@code @NetworkSecured(auth = AuthType.BOTH)}
+ * </pre>
  */
 public enum AuthType {
     /** OAuth 2.0 JWT Bearer token via 'authorization' metadata header */

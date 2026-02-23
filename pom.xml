@@ -15,11 +15,36 @@
 
     <groupId>com.netscope</groupId>
     <artifactId>netscope-server</artifactId>
-    <version>2.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <packaging>jar</packaging>
 
     <name>NetScope Server</name>
-    <description>Pure gRPC network access framework with OAuth 2.0 authentication</description>
+    <description>Spring Boot library that exposes annotated bean methods and fields as gRPC endpoints with built-in OAuth 2.0 and API key authentication</description>
+    <url>https://github.com/project-FractalX/NetScope</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>sathninduk</id>
+            <name>Sathnindu Kottage</name>
+            <url>https://github.com/sathninduk</url>
+            <organization>FractalX</organization>
+            <organizationUrl>https://github.com/project-FractalX</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/project-FractalX/NetScope.git</connection>
+        <developerConnection>scm:git:ssh://github.com/project-FractalX/NetScope.git</developerConnection>
+        <url>https://github.com/project-FractalX/NetScope/tree/main</url>
+    </scm>
 
     <properties>
         <java.version>21</java.version>
@@ -123,11 +148,11 @@
             <artifactId>jakarta.annotation-api</artifactId>
         </dependency>
 
-        <!-- Tomcat Annotations for @Generated -->
+        <!-- javax.annotation.Generated — required by gRPC-generated stubs on Java 9+ -->
         <dependency>
-            <groupId>org.apache.tomcat</groupId>
-            <artifactId>annotations-api</artifactId>
-            <version>6.0.53</version>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
             <scope>provided</scope>
         </dependency>
 
@@ -237,6 +262,50 @@
                 </configuration>
             </plugin>
 
+            <!-- Attach sources JAR (required by Maven Central) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals><goal>jar-no-fork</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Attach Javadoc JAR (required by Maven Central) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <configuration>
+                    <doclint>none</doclint>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals><goal>jar</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Sign artifacts for Maven Central (activate with -Prelease) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>3.2.4</version>
+                <configuration>
+                    <skip>true</skip>  <!-- disabled by default; enable in release profile -->
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <phase>verify</phase>
+                        <goals><goal>sign</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
@@ -257,5 +326,25 @@
             </plugin>
         </plugins>
     </build>
+
+
+    <profiles>
+        <!-- Activate with: mvn deploy -Prelease -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.4</version>
+                        <configuration>
+                            <skip>false</skip>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

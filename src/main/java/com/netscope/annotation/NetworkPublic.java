@@ -5,13 +5,17 @@ import java.lang.annotation.*;
 /**
  * Marks a method or field as publicly accessible — no authentication required.
  *
- * On a METHOD:
- *   @NetworkPublic
- *   public List<String> getPublicInfo() { ... }
+ * <p>On a METHOD:
+ * <pre>{@code
+ * @NetworkPublic
+ * public List<String> getPublicInfo() { ... }
+ * }</pre>
  *
- * On a FIELD:
- *   @NetworkPublic
- *   private String appVersion = "2.0.1";   // returns "2.0.1" directly
+ * <p>On a FIELD:
+ * <pre>{@code
+ * @NetworkPublic
+ * private String appVersion = "1.0.0";   // returns "1.0.0" directly
+ * }</pre>
  */
 @Target({ElementType.METHOD, ElementType.FIELD})
 @Retention(RetentionPolicy.RUNTIME)

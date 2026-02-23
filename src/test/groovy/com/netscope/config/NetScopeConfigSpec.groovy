@@ -205,40 +205,4 @@ class NetScopeConfigSpec extends Specification {
         sec.getApiKey().isEnabled()
     }
 
-    // ── DiscoveryConfig defaults ──────────────────────────────────────────────
-
-    def "DiscoveryConfig default: basePackages = empty list"() {
-        expect:
-        new NetScopeConfig().getDiscovery().getBasePackages().isEmpty()
-    }
-
-    def "DiscoveryConfig default: enabled = true"() {
-        expect:
-        new NetScopeConfig().getDiscovery().isEnabled()
-    }
-
-    def "DiscoveryConfig default: includeParameterNames = true"() {
-        expect:
-        new NetScopeConfig().getDiscovery().isIncludeParameterNames()
-    }
-
-    def "DiscoveryConfig default: includeReturnTypes = true"() {
-        expect:
-        new NetScopeConfig().getDiscovery().isIncludeReturnTypes()
-    }
-
-    def "DiscoveryConfig setters work"() {
-        given:
-        def disc = new NetScopeConfig().getDiscovery()
-        when:
-        disc.setBasePackages(["com.example", "com.test"])
-        disc.setEnabled(false)
-        disc.setIncludeParameterNames(false)
-        disc.setIncludeReturnTypes(false)
-        then:
-        disc.getBasePackages() == ["com.example", "com.test"]
-        !disc.isEnabled()
-        !disc.isIncludeParameterNames()
-        !disc.isIncludeReturnTypes()
-    }
 }

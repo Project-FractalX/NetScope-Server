@@ -99,8 +99,13 @@ public class OAuth2TokenValidator {
             if (oauthConfig.getJwkSetUri() != null) {
                 JWKSource<SecurityContext> keySource =
                         new RemoteJWKSet<>(new URL(oauthConfig.getJwkSetUri()));
+                // Support all common signing algorithms used by OAuth 2.0 providers
+                Set<JWSAlgorithm> algorithms = Set.of(
+                    JWSAlgorithm.RS256, JWSAlgorithm.RS384, JWSAlgorithm.RS512,
+                    JWSAlgorithm.ES256, JWSAlgorithm.ES384, JWSAlgorithm.ES512
+                );
                 JWSKeySelector<SecurityContext> keySelector =
-                        new JWSVerificationKeySelector<>(JWSAlgorithm.RS256, keySource);
+                        new JWSVerificationKeySelector<>(algorithms, keySource);
                 processor.setJWSKeySelector(keySelector);
             }
         } catch (Exception e) {

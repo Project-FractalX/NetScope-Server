@@ -4,24 +4,28 @@ import java.lang.annotation.*;
 
 /**
  * Marks a method or field as secured — requires authentication.
- * The auth parameter is REQUIRED — you must explicitly choose which auth type.
+ * The {@code auth} parameter is REQUIRED — you must explicitly choose which auth type.
  *
- * On a METHOD:
- *   @NetworkSecured(auth = AuthType.OAUTH)
- *   public Customer getCustomer(String id) { ... }
+ * <p>On a METHOD:
+ * <pre>{@code
+ * @NetworkSecured(auth = AuthType.OAUTH)
+ * public Customer getCustomer(String id) { ... }
  *
- *   @NetworkSecured(auth = AuthType.API_KEY)
- *   public void deleteCustomer(String id) { ... }  // returns {"status":"accepted"}
+ * @NetworkSecured(auth = AuthType.API_KEY)
+ * public void deleteCustomer(String id) { ... }
  *
- *   @NetworkSecured(auth = AuthType.BOTH)
- *   public List<Customer> listCustomers() { ... }
+ * @NetworkSecured(auth = AuthType.BOTH)
+ * public List<Customer> listCustomers() { ... }
+ * }</pre>
  *
- * On a FIELD (returns the field value directly):
- *   @NetworkSecured(auth = AuthType.OAUTH)
- *   private String secretToken = "abc123";         // returns "abc123" directly
+ * <p>On a FIELD (returns the field value directly):
+ * <pre>{@code
+ * @NetworkSecured(auth = AuthType.OAUTH)
+ * private String secretToken = "abc123";
  *
- *   @NetworkSecured(auth = AuthType.API_KEY)
- *   private int internalCounter = 42;              // returns 42 directly
+ * @NetworkSecured(auth = AuthType.API_KEY)
+ * private int internalCounter = 42;
+ * }</pre>
  */
 @Target({ElementType.METHOD, ElementType.FIELD})
 @Retention(RetentionPolicy.RUNTIME)

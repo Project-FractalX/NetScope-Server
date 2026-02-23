@@ -2,6 +2,21 @@
 
 **NetScope Server by FractalX** lets you expose any Spring bean method or field as a gRPC endpoint by adding a single annotation. Authentication (OAuth 2.0 JWT and/or API key) is handled automatically.
 
+### Features
+
+- Expose bean methods and fields over gRPC with a single annotation (`@NetworkPublic` / `@NetworkSecured`)
+- Dual authentication: OAuth 2.0 JWT (RS256/384/512, ES256/384/512) and/or API key per member
+- Multiple API keys supported — rotate keys without downtime
+- Read and write field attributes remotely via dedicated RPCs
+- Overloaded method support — correct overload inferred automatically from argument types
+- Reactive return types — `Mono`, `Flux`, and `CompletableFuture` unwrapped automatically
+- Inherited field and method scanning across the full class hierarchy
+- Interface method scanning with automatic interface name aliases
+- Static and final field awareness
+- Bidirectional streaming support
+- Live introspection via `GetDocs` RPC
+- Spring Boot auto-configuration — zero setup beyond a single annotation and a port number
+
 ---
 
 ## Table of Contents
@@ -21,6 +36,8 @@
   - [Objects (POJOs)](#objects-pojos)
   - [Overloaded methods](#overloaded-methods)
 - [Authentication](#authentication)
+  - [Supported JWT signing algorithms](#supported-jwt-signing-algorithms)
+  - [Multiple API keys](#multiple-api-keys)
 - [Reading and writing fields](#reading-and-writing-fields)
 - [Live introspection (GetDocs)](#live-introspection-getdocs)
 - [gRPC status codes](#grpc-status-codes)
@@ -55,12 +72,30 @@ Three steps to use it:
 ```xml
 <dependency>
     <groupId>com.netscope</groupId>
-    <artifactId>netscope</artifactId>
-    <version>2.0.0-SNAPSHOT</version>
+    <artifactId>netscope-server</artifactId>
+    <version>1.0.0</version>
 </dependency>
 ```
 
-### 2. Annotate a bean
+### 2. Enable NetScope in your application class
+
+```java
+import com.netscope.annotation.EnableNetScopeServer;
+
+@SpringBootApplication
+@EnableNetScopeServer
+public class MyApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(MyApplication.class, args);
+    }
+}
+```
+
+> Spring Boot auto-configuration activates NetScope automatically when the JAR is on the classpath.
+> `@EnableNetScopeServer` is an explicit alternative — use it if auto-configuration is not triggering
+> (e.g. in non-Boot Spring applications or custom application contexts).
+
+### 3. Annotate a bean
 
 ```java
 @Service
@@ -68,7 +103,7 @@ public class AppService {
 
     @NetworkPublic(description = "Current version")
     public String getVersion() {
-        return "2.0.0";
+        return "1.0.0";
     }
 
     @NetworkSecured(auth = AuthType.API_KEY, description = "Restart the service")
@@ -79,7 +114,7 @@ public class AppService {
 }
 ```
 
-### 3. Set a port
+### 4. Set a port
 
 ```yaml
 netscope:
@@ -87,7 +122,7 @@ netscope:
     port: 9090
 ```
 
-### 4. Call it
+### 5. Call it
 
 ```bash
 grpcurl -plaintext \
@@ -96,7 +131,7 @@ grpcurl -plaintext \
 ```
 
 ```json
-{ "result": "2.0.0" }
+{ "result": "1.0.0" }
 ```
 
 ---
@@ -109,7 +144,15 @@ Build and install the library to your local Maven repository:
 mvn clean install
 ```
 
-Then add the dependency shown in the Quick Start above.
+Then add to your project:
+
+```xml
+<dependency>
+    <groupId>com.netscope</groupId>
+    <artifactId>netscope-server</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
 
 ---
 
@@ -123,7 +166,7 @@ public class AppService {
 
     @NetworkPublic(description = "Current app version")
     public String getVersion() {
-        return "2.0.0";
+        return "1.0.0";
     }
 
     @NetworkPublic(description = "Feature flag — readable and writable remotely")
@@ -214,12 +257,19 @@ netscope:
   grpc:
     port: 9090
   security:
-    issuerUri: https://your-auth-server.com
-    jwkSetUri: https://your-auth-server.com/.well-known/jwks.json
-    audiences:
-      - your-api-audience
-    apiKey: your-api-key
+    oauth:
+      enabled: true
+      issuerUri: https://your-auth-server.com
+      jwkSetUri: https://your-auth-server.com/.well-known/jwks.json
+      audiences:
+        - your-api-audience
+    api-key:
+      enabled: true
+      keys:
+        - your-secret-api-key
 ```
+
+Both `oauth.enabled` and `api-key.enabled` must be set to `true` explicitly — neither is on by default.
 
 ### Full reference
 
@@ -238,14 +288,20 @@ netscope:
     enableReflection: true
 
   security:
-    enabled: true
-    issuerUri: https://auth.example.com
-    jwkSetUri: https://auth.example.com/.well-known/jwks.json
-    audiences:
-      - https://api.example.com
-    tokenCacheDuration: 300               # seconds to cache validated tokens
-    clockSkew: 60                         # seconds of allowed clock drift
-    apiKey: your-secret-api-key
+    oauth:
+      enabled: true
+      issuerUri: https://auth.example.com
+      jwkSetUri: https://auth.example.com/.well-known/jwks.json
+      audiences:
+        - https://api.example.com
+      tokenCacheDuration: 300             # seconds to cache validated tokens
+      clockSkew: 60                       # seconds of allowed clock drift
+    api-key:
+      enabled: true
+      keys:
+        - your-primary-api-key
+        - your-secondary-api-key          # multiple keys supported for rotation
+      headerName: x-api-key              # header clients send the key in (default: x-api-key)
 ```
 
 ---
@@ -485,6 +541,29 @@ grpcurl -plaintext -H 'authorization: Bearer eyJhbGci...' ...
 grpcurl -plaintext -H 'x-api-key: your-api-key' ...
 ```
 
+### Supported JWT signing algorithms
+
+NetScope accepts tokens signed with any of the following algorithms, covering all major OAuth 2.0 providers out of the box:
+
+| Algorithm | Type |
+|---|---|
+| RS256, RS384, RS512 | RSA (Keycloak default, Azure AD, most providers) |
+| ES256, ES384, ES512 | ECDSA (Auth0 optional, Okta optional) |
+
+### Multiple API keys
+
+The `api-key.keys` setting accepts a list, allowing key rotation without downtime:
+
+```yaml
+netscope:
+  security:
+    api-key:
+      enabled: true
+      keys:
+        - current-key
+        - new-key       # add new key, deploy, then remove old key in the next deploy
+```
+
 ---
 
 ## Reading and writing fields
@@ -571,10 +650,12 @@ Each entry includes:
 ```yaml
 netscope:
   security:
-    issuerUri: https://keycloak.example.com/realms/myrealm
-    jwkSetUri: https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs
-    audiences:
-      - account
+    oauth:
+      enabled: true
+      issuerUri: https://keycloak.example.com/realms/myrealm
+      jwkSetUri: https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs
+      audiences:
+        - account
 ```
 
 ### Auth0
@@ -582,10 +663,12 @@ netscope:
 ```yaml
 netscope:
   security:
-    issuerUri: https://your-tenant.auth0.com/
-    jwkSetUri: https://your-tenant.auth0.com/.well-known/jwks.json
-    audiences:
-      - https://your-api.example.com
+    oauth:
+      enabled: true
+      issuerUri: https://your-tenant.auth0.com/
+      jwkSetUri: https://your-tenant.auth0.com/.well-known/jwks.json
+      audiences:
+        - https://your-api.example.com
 ```
 
 ### Azure AD
@@ -593,10 +676,12 @@ netscope:
 ```yaml
 netscope:
   security:
-    issuerUri: https://login.microsoftonline.com/{tenant-id}/v2.0
-    jwkSetUri: https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys
-    audiences:
-      - api://{client-id}
+    oauth:
+      enabled: true
+      issuerUri: https://login.microsoftonline.com/{tenant-id}/v2.0
+      jwkSetUri: https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys
+      audiences:
+        - api://{client-id}
 ```
 
 ---
