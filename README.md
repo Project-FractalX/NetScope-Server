@@ -71,7 +71,7 @@ Three steps to use it:
 
 ```xml
 <dependency>
-    <groupId>com.netscope</groupId>
+    <groupId>org.fractalx</groupId>
     <artifactId>netscope-server</artifactId>
     <version>1.0.0</version>
 </dependency>
@@ -80,7 +80,7 @@ Three steps to use it:
 ### 2. Enable NetScope in your application class
 
 ```java
-import com.netscope.annotation.EnableNetScopeServer;
+import org.fractalx.netscope.server.annotation.EnableNetScopeServer;
 
 @SpringBootApplication
 @EnableNetScopeServer
@@ -118,8 +118,9 @@ public class AppService {
 
 ```yaml
 netscope:
-  grpc:
-    port: 9090
+  server:
+    grpc:
+      port: 9090
 ```
 
 ### 5. Call it
@@ -148,7 +149,7 @@ Then add to your project:
 
 ```xml
 <dependency>
-    <groupId>com.netscope</groupId>
+    <groupId>org.fractalx</groupId>
     <artifactId>netscope-server</artifactId>
     <version>1.0.0</version>
 </dependency>
@@ -254,19 +255,20 @@ Startup log confirms the alias was registered:
 
 ```yaml
 netscope:
-  grpc:
-    port: 9090
-  security:
-    oauth:
-      enabled: true
-      issuerUri: https://your-auth-server.com
-      jwkSetUri: https://your-auth-server.com/.well-known/jwks.json
-      audiences:
-        - your-api-audience
-    api-key:
-      enabled: true
-      keys:
-        - your-secret-api-key
+  server:
+    grpc:
+      port: 9090
+    security:
+      oauth:
+        enabled: true
+        issuerUri: https://your-auth-server.com
+        jwkSetUri: https://your-auth-server.com/.well-known/jwks.json
+        audiences:
+          - your-api-audience
+      api-key:
+        enabled: true
+        keys:
+          - your-secret-api-key
 ```
 
 Both `oauth.enabled` and `api-key.enabled` must be set to `true` explicitly — neither is on by default.
@@ -275,40 +277,42 @@ Security enforcement (`security.enabled`) defaults to `true`. To disable all aut
 
 ```yaml
 netscope:
-  security:
-    enabled: false   # dev mode — disables auth checks for all @NetworkSecured endpoints
+  server:
+    security:
+      enabled: false   # dev mode — disables auth checks for all @NetworkSecured endpoints
 ```
 
 ### Full reference
 
 ```yaml
 netscope:
-  grpc:
-    enabled: true
-    port: 9090
-    maxInboundMessageSize: 4194304        # bytes (default 4 MB)
-    maxConcurrentCallsPerConnection: 100
-    keepAliveTime: 300                    # seconds
-    keepAliveTimeout: 20
-    permitKeepAliveWithoutCalls: false
-    maxConnectionIdle: 0                  # 0 = unlimited
-    maxConnectionAge: 0
-    enableReflection: true
+  server:
+    grpc:
+      enabled: true
+      port: 9090
+      maxInboundMessageSize: 4194304        # bytes (default 4 MB)
+      maxConcurrentCallsPerConnection: 100
+      keepAliveTime: 300                    # seconds
+      keepAliveTimeout: 20
+      permitKeepAliveWithoutCalls: false
+      maxConnectionIdle: 0                  # 0 = unlimited
+      maxConnectionAge: 0
+      enableReflection: true
 
-  security:
-    oauth:
-      enabled: true
-      issuerUri: https://auth.example.com
-      jwkSetUri: https://auth.example.com/.well-known/jwks.json
-      audiences:
-        - https://api.example.com
-      tokenCacheDuration: 300             # seconds to cache validated tokens
-      clockSkew: 60                       # seconds of allowed clock drift
-    api-key:
-      enabled: true
-      keys:
-        - your-primary-api-key
-        - your-secondary-api-key          # multiple keys supported for rotation
+    security:
+      oauth:
+        enabled: true
+        issuerUri: https://auth.example.com
+        jwkSetUri: https://auth.example.com/.well-known/jwks.json
+        audiences:
+          - https://api.example.com
+        tokenCacheDuration: 300             # seconds to cache validated tokens
+        clockSkew: 60                       # seconds of allowed clock drift
+      api-key:
+        enabled: true
+        keys:
+          - your-primary-api-key
+          - your-secondary-api-key          # multiple keys supported for rotation
 ```
 
 ---
@@ -563,12 +567,13 @@ The `api-key.keys` setting accepts a list, allowing key rotation without downtim
 
 ```yaml
 netscope:
-  security:
-    api-key:
-      enabled: true
-      keys:
-        - current-key
-        - new-key       # add new key, deploy, then remove old key in the next deploy
+  server:
+    security:
+      api-key:
+        enabled: true
+        keys:
+          - current-key
+          - new-key       # add new key, deploy, then remove old key in the next deploy
 ```
 
 ---
@@ -656,39 +661,42 @@ Each entry includes:
 
 ```yaml
 netscope:
-  security:
-    oauth:
-      enabled: true
-      issuerUri: https://keycloak.example.com/realms/myrealm
-      jwkSetUri: https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs
-      audiences:
-        - account
+  server:
+    security:
+      oauth:
+        enabled: true
+        issuerUri: https://keycloak.example.com/realms/myrealm
+        jwkSetUri: https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs
+        audiences:
+          - account
 ```
 
 ### Auth0
 
 ```yaml
 netscope:
-  security:
-    oauth:
-      enabled: true
-      issuerUri: https://your-tenant.auth0.com/
-      jwkSetUri: https://your-tenant.auth0.com/.well-known/jwks.json
-      audiences:
-        - https://your-api.example.com
+  server:
+    security:
+      oauth:
+        enabled: true
+        issuerUri: https://your-tenant.auth0.com/
+        jwkSetUri: https://your-tenant.auth0.com/.well-known/jwks.json
+        audiences:
+          - https://your-api.example.com
 ```
 
 ### Azure AD
 
 ```yaml
 netscope:
-  security:
-    oauth:
-      enabled: true
-      issuerUri: https://login.microsoftonline.com/{tenant-id}/v2.0
-      jwkSetUri: https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys
-      audiences:
-        - api://{client-id}
+  server:
+    security:
+      oauth:
+        enabled: true
+        issuerUri: https://login.microsoftonline.com/{tenant-id}/v2.0
+        jwkSetUri: https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys
+        audiences:
+          - api://{client-id}
 ```
 
 ---
@@ -725,7 +733,7 @@ netscope:
 ```yaml
 logging:
   level:
-    com.netscope: DEBUG
+    org.fractalx.netscope.server: DEBUG
     io.grpc: INFO
 ```
 

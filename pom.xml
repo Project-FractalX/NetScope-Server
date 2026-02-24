@@ -14,7 +14,7 @@
     </parent>
 
     <groupId>org.fractalx</groupId>
-    <artifactId>netscope</artifactId>
+    <artifactId>netscope-server</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 

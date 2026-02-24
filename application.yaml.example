@@ -2,90 +2,91 @@
 # Copy this file to your application.yaml and customize as needed
 
 netscope:
-  # ═══════════════════════════════════════════════════════════════
-  # gRPC Server Configuration
-  # ═══════════════════════════════════════════════════════════════
-  grpc:
-    # Enable/disable gRPC server
-    enabled: true
-    
-    # gRPC server port
-    port: 9090
-    
-    # Maximum inbound message size in bytes (default: 4MB)
-    maxInboundMessageSize: 4194304
-    
-    # Maximum concurrent calls per connection
-    maxConcurrentCallsPerConnection: 100
-    
-    # Keep-alive time in seconds (0 = disabled)
-    keepAliveTime: 300
-    
-    # Keep-alive timeout in seconds
-    keepAliveTimeout: 20
-    
-    # Permit keep-alive without calls
-    permitKeepAliveWithoutCalls: false
-    
-    # Maximum connection idle time in seconds (0 = infinite)
-    maxConnectionIdle: 0
-    
-    # Maximum connection age in seconds (0 = infinite)
-    maxConnectionAge: 0
-    
-    # Enable gRPC server reflection (for grpcurl, Postman, etc.)
-    enableReflection: true
+  server:
+    # ═══════════════════════════════════════════════════════════════
+    # gRPC Server Configuration
+    # ═══════════════════════════════════════════════════════════════
+    grpc:
+      # Enable/disable gRPC server
+      enabled: true
+      
+      # gRPC server port
+      port: 9090
+      
+      # Maximum inbound message size in bytes (default: 4MB)
+      maxInboundMessageSize: 4194304
+      
+      # Maximum concurrent calls per connection
+      maxConcurrentCallsPerConnection: 100
+      
+      # Keep-alive time in seconds (0 = disabled)
+      keepAliveTime: 300
+      
+      # Keep-alive timeout in seconds
+      keepAliveTimeout: 20
+      
+      # Permit keep-alive without calls
+      permitKeepAliveWithoutCalls: false
+      
+      # Maximum connection idle time in seconds (0 = infinite)
+      maxConnectionIdle: 0
+      
+      # Maximum connection age in seconds (0 = infinite)
+      maxConnectionAge: 0
+      
+      # Enable gRPC server reflection (for grpcurl, Postman, etc.)
+      enableReflection: true
 
-  # ═══════════════════════════════════════════════════════════════
-  # OAuth 2.0 Security Configuration
-  # ═══════════════════════════════════════════════════════════════
-  security:
-    # Enable/disable OAuth 2.0 authentication
-    enabled: true
-    
-    # JWT issuer URL (must match the 'iss' claim in tokens)
-    issuerUri: https://auth.example.com
-    
-    # JWK Set URI for token validation (JWKS endpoint)
-    jwkSetUri: https://auth.example.com/.well-known/jwks.json
-    
-    # Expected audiences (must match 'aud' claim in tokens)
-    audiences:
-      - https://api.example.com
-      - my-api-audience
-    
-    # Token validation cache duration in seconds
-    # Caches successful validations to reduce load on auth server
-    tokenCacheDuration: 300
-    
-    # Clock skew allowance in seconds (for exp/nbf validation)
-    clockSkew: 60
-    
-    # Allow public methods without authentication
-    # Set to false to require authentication for ALL methods
-    allowPublicMethods: true
-    
-    # Require HTTPS for token validation (recommended for production)
-    requireHttps: false
+    # ═══════════════════════════════════════════════════════════════
+    # OAuth 2.0 Security Configuration
+    # ═══════════════════════════════════════════════════════════════
+    security:
+      # Enable/disable OAuth 2.0 authentication
+      enabled: true
+      
+      # JWT issuer URL (must match the 'iss' claim in tokens)
+      issuerUri: https://auth.example.com
+      
+      # JWK Set URI for token validation (JWKS endpoint)
+      jwkSetUri: https://auth.example.com/.well-known/jwks.json
+      
+      # Expected audiences (must match 'aud' claim in tokens)
+      audiences:
+        - https://api.example.com
+        - my-api-audience
+      
+      # Token validation cache duration in seconds
+      # Caches successful validations to reduce load on auth server
+      tokenCacheDuration: 300
+      
+      # Clock skew allowance in seconds (for exp/nbf validation)
+      clockSkew: 60
+      
+      # Allow public methods without authentication
+      # Set to false to require authentication for ALL methods
+      allowPublicMethods: true
+      
+      # Require HTTPS for token validation (recommended for production)
+      requireHttps: false
 
-  # ═══════════════════════════════════════════════════════════════
-  # Service Discovery Configuration
-  # ═══════════════════════════════════════════════════════════════
-  discovery:
-    # Enable automatic service discovery
-    enabled: true
-    
-    # Base packages to scan for network-exposed methods
-    # Leave empty to scan all packages
-    basePackages:
-      - com.example.service
-      - com.example.api
-    
-    # Include method parameter names in documentation
-    includeParameterNames: true
-    
-    # Include return types in documentation
-    includeReturnTypes: true
+    # ═══════════════════════════════════════════════════════════════
+    # Service Discovery Configuration
+    # ═══════════════════════════════════════════════════════════════
+    discovery:
+      # Enable automatic service discovery
+      enabled: true
+      
+      # Base packages to scan for network-exposed methods
+      # Leave empty to scan all packages
+      basePackages:
+        - com.example.service
+        - com.example.api
+      
+      # Include method parameter names in documentation
+      includeParameterNames: true
+      
+      # Include return types in documentation
+      includeReturnTypes: true
 
 # ═══════════════════════════════════════════════════════════════
 # Application Logging Configuration
@@ -93,7 +94,7 @@ netscope:
 logging:
   level:
     # NetScope debug logging
-    com.netscope: INFO
+    org.fractalx.netscope.server: INFO
     
     # gRPC logging
     io.grpc: WARN
@@ -112,66 +113,71 @@ logging:
 # Keycloak Configuration
 # ─────────────────────────────────────────────────────────────
 #netscope:
-#  security:
-#    issuerUri: https://keycloak.example.com/realms/myrealm
-#    jwkSetUri: https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs
-#    audiences:
-#      - account
+#  server:
+#    security:
+#      issuerUri: https://keycloak.example.com/realms/myrealm
+#      jwkSetUri: https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs
+#      audiences:
+#        - account
 
 # ─────────────────────────────────────────────────────────────
 # Auth0 Configuration
 # ─────────────────────────────────────────────────────────────
 #netscope:
-#  security:
-#    issuerUri: https://your-tenant.auth0.com/
-#    jwkSetUri: https://your-tenant.auth0.com/.well-known/jwks.json
-#    audiences:
-#      - https://your-api.example.com
+#  server:
+#    security:
+#      issuerUri: https://your-tenant.auth0.com/
+#      jwkSetUri: https://your-tenant.auth0.com/.well-known/jwks.json
+#      audiences:
+#        - https://your-api.example.com
 
 # ─────────────────────────────────────────────────────────────
 # Azure AD Configuration
 # ─────────────────────────────────────────────────────────────
 #netscope:
-#  security:
-#    issuerUri: https://login.microsoftonline.com/{tenant-id}/v2.0
-#    jwkSetUri: https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys
-#    audiences:
-#      - api://{client-id}
+#  server:
+#    security:
+#      issuerUri: https://login.microsoftonline.com/{tenant-id}/v2.0
+#      jwkSetUri: https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys
+#      audiences:
+#        - api://{client-id}
 
 # ─────────────────────────────────────────────────────────────
 # Development Mode (Security Disabled)
 # WARNING: Only use in development/testing!
 # ─────────────────────────────────────────────────────────────
 #netscope:
-#  security:
-#    enabled: false
+#  server:
+#    security:
+#      enabled: false
 
 # ─────────────────────────────────────────────────────────────
 # Production Optimized Configuration
 # ─────────────────────────────────────────────────────────────
 #netscope:
-#  grpc:
-#    port: 9090
-#    maxInboundMessageSize: 10485760  # 10MB
-#    maxConcurrentCallsPerConnection: 200
-#    keepAliveTime: 300
-#    keepAliveTimeout: 20
-#    maxConnectionIdle: 600
-#    maxConnectionAge: 3600
-#    enableReflection: false  # Disable in production
-#  security:
-#    enabled: true
-#    issuerUri: https://auth.production.com
-#    jwkSetUri: https://auth.production.com/.well-known/jwks.json
-#    audiences:
-#      - https://api.production.com
-#    tokenCacheDuration: 300
-#    clockSkew: 30
-#    requireHttps: true
-#  discovery:
-#    basePackages:
-#      - com.mycompany.api
+#  server:
+#    grpc:
+#      port: 9090
+#      maxInboundMessageSize: 10485760  # 10MB
+#      maxConcurrentCallsPerConnection: 200
+#      keepAliveTime: 300
+#      keepAliveTimeout: 20
+#      maxConnectionIdle: 600
+#      maxConnectionAge: 3600
+#      enableReflection: false  # Disable in production
+#    security:
+#      enabled: true
+#      issuerUri: https://auth.production.com
+#      jwkSetUri: https://auth.production.com/.well-known/jwks.json
+#      audiences:
+#        - https://api.production.com
+#      tokenCacheDuration: 300
+#      clockSkew: 30
+#      requireHttps: true
+#    discovery:
+#      basePackages:
+#        - com.mycompany.api
 #logging:
 #  level:
-#    com.netscope: WARN
+#    org.fractalx.netscope.server: WARN
 #    io.grpc: ERROR
