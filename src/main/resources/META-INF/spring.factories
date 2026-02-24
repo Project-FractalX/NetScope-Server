@@ -1,2 +1,2 @@
 org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
-com.netscope.config.NetScopeAutoConfiguration
+org.fractalx.netscope.config.NetScopeAutoConfiguration

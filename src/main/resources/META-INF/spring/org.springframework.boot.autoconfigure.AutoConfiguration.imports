@@ -1,1 +1,1 @@
-com.netscope.config.NetScopeAutoConfiguration
+org.fractalx.netscope.config.NetScopeAutoConfiguration

@@ -13,8 +13,8 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.netscope</groupId>
-    <artifactId>netscope-server</artifactId>
+    <groupId>org.fractalx</groupId>
+    <artifactId>netscope</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
@@ -334,12 +334,27 @@
             <id>release</id>
             <build>
                 <plugins>
+                    <!-- GPG signing (required by Maven Central) -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
                         <version>3.2.4</version>
                         <configuration>
                             <skip>false</skip>
+                        </configuration>
+                    </plugin>
+
+                    <!-- Sonatype Central Portal publisher -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.6.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <!-- matches the <server id> in ~/.m2/settings.xml -->
+                            <publishingServerId>central</publishingServerId>
+                            <!-- set to true to publish automatically without manual review -->
+                            <autoPublish>false</autoPublish>
                         </configuration>
                     </plugin>
                 </plugins>
