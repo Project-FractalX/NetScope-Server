@@ -20,7 +20,7 @@
 
     <name>NetScope Server</name>
     <description>Spring Boot library that exposes annotated bean methods and fields as gRPC endpoints with built-in OAuth 2.0 and API key authentication</description>
-    <url>https://github.com/project-FractalX/NetScope</url>
+    <url>https://github.com/project-FractalX/NetScope-Server</url>
 
     <licenses>
         <license>
