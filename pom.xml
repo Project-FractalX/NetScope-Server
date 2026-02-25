@@ -41,9 +41,9 @@
     </developers>
 
     <scm>
-        <connection>scm:git:git://github.com/project-FractalX/NetScope.git</connection>
-        <developerConnection>scm:git:ssh://github.com/project-FractalX/NetScope.git</developerConnection>
-        <url>https://github.com/project-FractalX/NetScope/tree/main</url>
+        <connection>scm:git:git://github.com/project-FractalX/NetScope-Server.git</connection>
+        <developerConnection>scm:git:ssh://github.com/project-FractalX/NetScope-Server.git</developerConnection>
+        <url>https://github.com/project-FractalX/NetScope-Server/tree/main</url>
     </scm>
 
     <properties>
